@@ -1,28 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Universal Robots ROS2 Driver",
+  "projectType": "general",
+  "projectName": "Universal Robots ROS2 Driver",
+  "projectDescription": "A ROS2 driver for the complete Universal Robots lineup (CB3, PolyScope 5, and PolyScope X), enabling real-time joint control, force/torque control, MoveIt2 integration, and full dashboard management via ros2_control.",
   "theme": "aspen",
-  "colors": {
-    "primary": "#e69884",
-    "light": "#9cafb2",
-    "dark": "#3d3e46"
-  },
-  "favicon": "https://media.brand.dev/a82de77b-b473-4466-a348-4442cd9f1a5c.svg",
-  "logo": {
-    "light": "https://media.brand.dev/6520a427-ec0a-4e1a-a47c-29283f8ae0cf.svg",
-    "dark": "https://media.brand.dev/6520a427-ec0a-4e1a-a47c-29283f8ae0cf.svg"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver"
-    }
-  },
+  "primaryColor": "#e69884",
+  "lightColor": "#9cafb2",
+  "darkColor": "#3d3e46",
   "navigation": {
     "tabs": [
       {
@@ -95,5 +78,34 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Full ros2_control integration with position, velocity, effort, and force control modes",
+    "Scaled joint trajectory controller respecting robot speed scaling",
+    "Passthrough trajectory controller for on-robot interpolation",
+    "Headless mode operation without teach pendant interaction",
+    "Automatic speed scaling and safety-stop handling",
+    "Built-in MoveIt2 support via ur_moveit_config",
+    "Dashboard client for full robot lifecycle management",
+    "Calibration extraction tool for accurate TCP pose",
+    "Freedrive, Force Mode, and Tool Contact controllers",
+    "Compatible with CB3, PolyScope 5, and PolyScope X robots"
+  ],
+  "publicApiSurface": [
+    "ros2 launch ur_robot_driver ur_control.launch.py",
+    "scaled_joint_trajectory_controller",
+    "joint_trajectory_controller",
+    "forward_position_controller",
+    "forward_velocity_controller",
+    "force_mode_controller",
+    "freedrive_mode_controller",
+    "tool_contact_controller",
+    "passthrough_trajectory_controller",
+    "io_and_status_controller",
+    "speed_scaling_state_broadcaster",
+    "tcp_pose_broadcaster",
+    "/dashboard_client/* services",
+    "ur_calibration package",
+    "ur_dashboard_msgs message types"
+  ]
 }

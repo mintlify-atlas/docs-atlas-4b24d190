@@ -1,0 +1,154 @@
+---
+title: "UR ROS2 Driver: All Topics and Services by Component"
+description: "Reference for all ROS2 topics and services published by the UR driver's controllers, broadcasters, and helper nodes — organized by component."
+---
+
+The UR ROS2 driver exposes robot state and control interfaces through a set of topics and services. These are provided by individual controllers and helper nodes that are launched alongside the hardware interface. The sections below organize interfaces by the component that provides them.
+
+<Note>
+All topic and service names are relative to the node's namespace. When launched with the default configuration, the controller manager namespace is typically `/`. The `~/` prefix in the source documentation maps to the controller's own namespace — for example, `~/io_states` for the `io_and_status_controller` resolves to `/io_and_status_controller/io_states`.
+</Note>
+
+## Joint state broadcaster
+
+The `joint_state_broadcaster` is a standard `ros2_controllers` component that reads joint state interfaces from the hardware and re-publishes them.
+
+| Topic | Type | Description |
+|---|---|---|
+| `/joint_states` | `sensor_msgs/msg/JointState` | Current joint positions, velocities, and efforts for all six joints. |
+
+## Force torque sensor broadcaster
+
+The `force_torque_sensor_broadcaster` reads the force/torque state interfaces from the hardware interface and publishes them.
+
+| Topic | Type | Description |
+|---|---|---|
+| `/force_torque_sensor_broadcaster/wrench` | `geometry_msgs/msg/WrenchStamped` | Force and torque measured at the TCP by the robot's built-in force/torque sensor. |
+
+## TCP pose broadcaster
+
+The `tcp_pose_broadcaster` (using `pose_broadcaster`) publishes the current TCP pose as reported by the robot.
+
+| Topic | Type | Description |
+|---|---|---|
+| `/tcp_pose_broadcaster/pose` | `geometry_msgs/msg/PoseStamped` | Current TCP pose in the robot base frame. |
+
+## Speed scaling state broadcaster
+
+The `speed_scaling_state_broadcaster` publishes the current execution speed as reported by the robot. The published value is the product of the speed slider position (`speed_scaling`) and the target speed fraction (`target_speed_fraction`) from RTDE. Values are floats between 0 and 1.
+
+| Topic | Type | Description |
+|---|---|---|
+| `/speed_scaling_state_broadcaster/speed_scaling` | `std_msgs/msg/Float64` | Current speed scaling factor in the range [0, 1]. |
+
+## io_and_status_controller (GPIOController)
+
+The `io_and_status_controller` allows setting I/O ports, controlling UR-specific functionality, and reading robot status. It is the primary interface for robot state monitoring and I/O control beyond joint motion.
+
+### Published topics
+
+| Topic | Type | Description |
+|---|---|---|
+| `~/io_states` | `ur_msgs/msg/IOStates` | Status of all digital and analog I/O ports on the robot. |
+| `~/robot_mode` | `ur_dashboard_msgs/msg/RobotMode` | Current robot mode (e.g. `POWER_OFF`, `IDLE`, `RUNNING`). |
+| `~/robot_program_running` | `std_msgs/msg/Bool` | Whether the External Control program is currently running on the robot. If `false`, no motion commands can be sent. |
+| `~/safety_mode` | `ur_dashboard_msgs/msg/SafetyMode` | Current safety mode (e.g. `NORMAL`, `PROTECTIVE_STOP`, `ROBOT_EMERGENCY_STOP`). |
+| `~/tool_data` | `ur_msgs/msg/ToolDataMsg` | Information about the robot's tool configuration including tool voltage and current. |
+
+### Advertised services
+
+| Service | Type | Description |
+|---|---|---|
+| `~/hand_back_control` | `std_srvs/srv/Trigger` | Makes the robot program exit the External Control program node and continue with the remainder of the PolyScope program. |
+| `~/resend_robot_program` | `std_srvs/srv/Trigger` | When headless mode is active, restart the External Control program on the robot. See [headless mode](/usage/operation-modes). |
+| `~/set_io` | `ur_msgs/srv/SetIO` | Set a digital output pin on the robot. |
+| `~/set_analog_output` | `ur_msgs/srv/SetAnalogOutput` | Set an analog output on the robot, including specifying the voltage/current domain. |
+| `~/set_payload` | `ur_msgs/srv/SetPayload` | Change the robot's payload (mass and center of gravity) at runtime. |
+| `~/set_speed_slider` | `ur_msgs/srv/SetSpeedSliderFraction` | Set the value of the speed slider on the robot (range [0.0, 1.0]). |
+| `~/zero_ftsensor` | `std_srvs/srv/Trigger` | Zero the reported wrench of the force/torque sensor. |
+
+## ForceModeController
+
+Activates the robot's Force Mode, interfacing the URScript `force_mode()` function. Can be combined with all position control modes (`joint_trajectory_controller`, `passthrough_trajectory_controller`, `forward_position_controller`, `forward_velocity_controller`, `motion_primitive_forward_controller`).
+
+| Service | Type | Description |
+|---|---|---|
+| `~/start_force_mode` | `ur_msgs/srv/SetForceMode` | Start force mode with the specified task frame, selection vector, wrench, type, speed limits, deviation limits, damping factor, and gain scaling. |
+| `~/stop_force_mode` | `std_srvs/srv/Trigger` | Stop force mode and return to normal motion control. |
+
+## FrictionModelController
+
+Allows setting per-joint viscous and Coulomb friction scale factors for direct torque control.
+
+| Service | Type | Description |
+|---|---|---|
+| `~/set_friction_model_parameters` | `ur_msgs/srv/SetFrictionModelParameters` | Set per-joint friction scale factors (range [0, 1] for each joint, where 0 = no compensation and 1 = full compensation). Each array must contain exactly one value per joint. |
+
+## FreedriveModeController
+
+Activates Freedrive Mode, allowing manual movement of the robot's joints.
+
+| Topic | Type | Description |
+|---|---|---|
+| `~/enable_freedrive_mode` | `std_msgs/msg/Bool` | Publish `true` to activate freedrive mode. Freedrive remains active as long as `true` messages arrive within the `inactive_timeout` window. Publish `false` to deactivate. |
+
+<Tip>
+To keep freedrive active, publish `true` at a rate of at least `1 / (inactive_timeout / 2)` Hz. With the default `inactive_timeout` of 1 second, publish at least every 0.5 seconds.
+
+```bash
+ros2 topic pub --rate 2 /freedrive_mode_controller/enable_freedrive_mode std_msgs/msg/Bool "{data: true}"
+```
+</Tip>
+
+## ToolContactController
+
+Enables the tool contact function on the robot. When tool contact is enabled and the robot's tool touches an object, it stops all motion and retracts to the point of first contact. Can be used in combination with any motion controller.
+
+| Action | Type | Description |
+|---|---|---|
+| `~/detect_tool_contact` | `ur_msgs/action/ToolContact` | Enable tool contact detection. Succeeds when contact is detected; remains active until contact occurs, is cancelled by the user, or is aborted by the hardware. |
+
+```bash
+ros2 action send_goal /tool_contact_controller/detect_tool_contact ur_msgs/action/ToolContact
+```
+
+## PassthroughTrajectoryController
+
+Forwards complete trajectories to the robot controller for interpolation and execution.
+
+| Action | Type | Description |
+|---|---|---|
+| `~/follow_joint_trajectory` | `control_msgs/action/FollowJointTrajectory` | Send a complete joint trajectory to be forwarded to and executed on the robot controller. |
+
+## URConfigurationController
+
+Provides access to UR-specific configuration data.
+
+| Service | Type | Description |
+|---|---|---|
+| `~/get_software_version` | `ur_msgs/srv/GetRobotSoftwareVersion` | Get the robot's software version (major, minor, patch, and build number). |
+
+## Robot state helper node
+
+The `robot_state_helper` node (`ur_robot_state_helper`) automates robot startup and fault recovery by orchestrating dashboard client calls.
+
+| Action | Type | Description |
+|---|---|---|
+| `/ur_robot_state_helper/set_mode` | `ur_dashboard_msgs/action/SetMode` | Set the robot to a target mode (3 = POWER_OFF, 5 = IDLE, 7 = RUNNING), optionally stopping and/or starting the program. |
+
+```bash
+ros2 action send_goal /ur_robot_state_helper/set_mode ur_dashboard_msgs/action/SetMode \
+  "{ target_robot_mode: 7, stop_program: true, play_program: true}"
+```
+
+## Trajectory-until node
+
+The `trajectory_until_node` allows executing a trajectory with an "until" condition (currently only tool contact) without coordinating two separate action calls.
+
+| Action | Type | Description |
+|---|---|---|
+| `/trajectory_until_node/execute` | `ur_msgs/action/TrajectoryUntil` | Execute a joint trajectory that stops early if the specified condition is triggered. The `until_type` goal field selects the condition; the `until_condition_result` result field reports whether the condition was triggered. Both early-stop and natural completion are reported as success. |
+
+## Controller stopper
+
+The `controller_stopper` node does not expose topics or services directly. Instead, it monitors the `/io_and_status_controller/robot_program_running` topic and automatically deactivates all motion controllers (except those listed in `consistent_controllers`) when the External Control program stops running. Once the program resumes, previously active controllers are reactivated.

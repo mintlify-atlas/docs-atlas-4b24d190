@@ -1,0 +1,157 @@
+---
+title: "Launch the UR ROS2 Driver and Connect to Your Robot"
+description: "How to prepare the robot, launch the UR ROS2 driver with ur_control.launch.py, verify calibration, and resume control after interruptions and E-stops."
+---
+
+Before launching the driver, the robot must be prepared correctly. Make sure you have completed the [robot setup](/robot-setup) steps, installed the External Control URCap, and created a program containing the External Control node on the teach pendant.
+
+## Startup sequence
+
+<Steps>
+  <Step title="Prepare the robot">
+    Ensure the robot is powered on, the teach pendant shows no faults, and the External Control URCap program has been created as described in the [robot setup guide](/robot-setup). Note the robot's IP address — you will need it in the next step.
+  </Step>
+
+  <Step title="Launch the driver">
+    Start the driver from the `ur_robot_driver` package. The only required arguments are `ur_type` and `robot_ip`:
+
+    ```bash
+    ros2 launch ur_robot_driver ur_control.launch.py ur_type:=ur5e robot_ip:=192.168.56.101
+    ```
+
+    Supported `ur_type` values: `ur3`, `ur3e`, `ur5`, `ur5e`, `ur7e`, `ur10`, `ur10e`, `ur12e`, `ur16e`, `ur8long`, `ur15`, `ur18`, `ur20`, `ur30`.
+
+    To see all available arguments:
+
+    ```bash
+    ros2 launch ur_robot_driver ur_control.launch.py --show-args
+    ```
+  </Step>
+
+  <Step title="Start the External Control program on the robot">
+    Unless `headless_mode:=true` is used, you must start the External Control URCap program on the robot after the driver has started.
+
+    <Tabs>
+      <Tab title="Local control mode">
+        Load the External Control program on the teach pendant and press the **Play** button to start it. The ROS terminal should show:
+
+        ```
+        Robot connected to reverse interface. Ready to receive control commands.
+        ```
+      </Tab>
+      <Tab title="Remote control mode">
+        Use the dashboard client to load and start the program over ROS 2 service calls:
+
+        ```bash
+        ros2 service call /dashboard_client/load_program ur_dashboard_msgs/srv/Load "filename: my_robot_program.urp"
+        ros2 service call /dashboard_client/play std_srvs/srv/Trigger {}
+        ```
+
+        <Note>
+          Remote control mode must be enabled on the teach pendant under **Settings → System → Remote Control** (PolyScope 5 only). See [operation modes](/usage/operation-modes) for details.
+        </Note>
+      </Tab>
+      <Tab title="Headless mode">
+        When `headless_mode:=true` is passed at launch, the driver sends the URScript directly to the robot controller. No action on the teach pendant is needed — the driver is already running.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Verify calibration">
+    If you passed a `kinematics_params_file`, inspect the console output to confirm the calibration matches the connected robot.
+
+    A successful match looks like:
+
+    ```
+    [INFO] [URPositionHardwareInterface]: Calibration checksum: 'calib_xxxxxxxxxxxxxxxxxxx'
+    [INFO] [URPositionHardwareInterface]: Calibration checked successfully.
+    ```
+
+    A mismatch produces an error instead:
+
+    ```
+    [INFO] [URPositionHardwareInterface]: Calibration checksum: 'calib_xxxxxxxxxxxxxxxxxxx'
+    [ERROR] [URPositionHardwareInterface]: The calibration parameters of the connected robot don't match the ones from the given kinematics config file.
+    ```
+
+    You can also search the console output for the term `checksum` and compare it with the final line of your extracted calibration file. See [calibration extraction](/advanced/calibration) for more information.
+  </Step>
+</Steps>
+
+## Key launch arguments
+
+| Argument | Default | Description |
+|---|---|---|
+| `ur_type` | *(required)* | Robot model, e.g. `ur5e`, `ur10e`. |
+| `robot_ip` | *(required)* | IP address of the robot controller. |
+| `kinematics_params_file` | `None` | Path to the calibration file extracted from the robot. |
+| `use_mock_hardware` | `false` | Use ros2_control mock hardware instead of a real robot. |
+| `headless_mode` | `false` | Send URScript directly without the teach pendant. |
+| `launch_rviz` | `true` | Start RViz alongside the driver. |
+| `initial_joint_controller` | `scaled_joint_trajectory_controller` | Active joint controller at startup. |
+
+<Note>
+  Once the driver is running, list all loaded controllers with:
+
+  ```bash
+  ros2 control list_controllers
+  ```
+
+  This requires the `ros2controlcli` package (`sudo apt-get install ros-${ROS_DISTRO}-ros2controlcli`).
+</Note>
+
+## Handling interruptions and reconnection
+
+The External Control program stops whenever it is interrupted — for example after a protective stop, an emergency stop, a teach pendant interaction, or another script being sent to the robot. When this happens, the driver logs:
+
+```
+Connection to reverse interface dropped.
+```
+
+To resume control, restart the External Control program:
+
+<Tabs>
+  <Tab title="Local control mode">
+    Press the **Play** button on the teach pendant.
+  </Tab>
+  <Tab title="Remote control mode">
+    Call the dashboard play service:
+
+    ```bash
+    ros2 service call /dashboard_client/play std_srvs/srv/Trigger {}
+    ```
+  </Tab>
+  <Tab title="Headless mode">
+    Resend the robot program via the IO and status controller service:
+
+    ```bash
+    ros2 service call /io_and_status_controller/resend_robot_program std_srvs/srv/Trigger {}
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  Any motion in progress is cancelled when the program stops. Always ensure the robot is in a safe state before restarting the program.
+</Warning>
+
+## What happens at startup
+
+The `ur_control.launch.py` file starts several nodes together:
+
+- `ros2_control_node` — the hardware interface and controller manager
+- `robot_state_publisher` — publishes the URDF and TF tree
+- `ur_dashboard_client` — dashboard server bridge (skipped with mock hardware)
+- `ur_robot_state_helper` — monitors the robot power and brake state
+- `urscript_interface` — forwards raw URScript to the robot
+- `controller_stopper` — stops joint controllers when the robot program is not running
+- A set of pre-loaded controllers (active and inactive)
+- RViz (when `launch_rviz:=true`)
+
+<CardGroup cols={2}>
+  <Card title="Operation modes" icon="toggle-left" href="/usage/operation-modes">
+    Understand local vs. remote control mode and headless mode.
+  </Card>
+  <Card title="Simulation" icon="flask" href="/usage/simulation">
+    Run the driver against URSim or mock hardware.
+  </Card>
+</CardGroup>

@@ -1,0 +1,74 @@
+---
+title: "Universal Robots ROS2 Driver: Key Features and Packages"
+description: "A production-ready ROS2 driver for the full UR robot lineup, from CB3 to PolyScope X. Real-time joint control, force/torque control, and MoveIt2 integration."
+---
+
+The Universal Robots ROS2 Driver connects the entire UR robot family — from the lightweight UR3 to the heavy-duty UR30 — to the ROS2 ecosystem. Built on the [Universal_Robots_Client_Library](https://github.com/UniversalRobots/Universal_Robots_Client_Library) and the `ros2_control` framework, this driver gives you fine-grained, real-time control over UR cobots running CB3, PolyScope 5, or PolyScope X software.
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install the driver from binary packages or build from source for your ROS2 distro
+  </Card>
+  <Card title="Robot Setup" icon="robot" href="/robot-setup">
+    Configure your UR robot or URSim simulator to communicate with the driver
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Launch the driver and move your robot in minutes
+  </Card>
+  <Card title="Controllers" icon="sliders" href="/controllers/overview">
+    Explore position, velocity, force, and utility controllers
+  </Card>
+</CardGroup>
+
+## What this driver provides
+
+The driver is built around `ros2_control` and exposes the full UR hardware interface through a set of controllers and broadcasters. You get:
+
+- **Scaled joint trajectory control** — respects the robot's speed scaling factor so trajectories execute correctly even when the operator slows the robot from the teach pendant
+- **Passthrough trajectory control** — forwards complete trajectory points to the robot for on-robot interpolation, reducing latency
+- **Force and torque control** — control the end-effector in Cartesian force/torque space using the native UR Force Mode
+- **Freedrive mode** — let a user physically guide the robot without active control
+- **Dashboard client** — a full ROS2 service interface to the UR Dashboard Server for power-on, brake release, program management, and safety reset
+- **Calibration extraction** — extract and verify robot-specific kinematics calibration so Cartesian poses are accurate in ROS
+
+## Supported robots and software
+
+<CardGroup cols={2}>
+  <Card title="CB3 series" icon="microchip">
+    UR3, UR5, UR10 — PolyScope 3
+  </Card>
+  <Card title="e-Series / PolyScope 5" icon="microchip">
+    UR3e, UR5e, UR7e, UR10e, UR12e, UR16e — PolyScope 5
+  </Card>
+  <Card title="Heavy payload" icon="weight-hanging">
+    UR15, UR18, UR20, UR30, UR8long — PolyScope 5 or PolyScope X
+  </Card>
+  <Card title="PolyScope X" icon="star">
+    All current-generation robots on the new PolyScope X platform
+  </Card>
+</CardGroup>
+
+## Supported ROS2 distributions
+
+| Distribution | Branch | Status |
+|---|---|---|
+| Rolling | `main` | Active development |
+| Kilted | `kilted` | Supported |
+| Jazzy | `jazzy` | Supported |
+| Humble | `humble` | Supported |
+| Iron, Galactic, Foxy | EOL branches | No further updates |
+
+<Note>
+  The driver requires Linux. Windows and macOS are not supported. For best real-time performance, use a low-latency or `PREEMPT_RT`-patched kernel and a direct network connection to the robot.
+</Note>
+
+## Packages in this repository
+
+| Package | Purpose |
+|---|---|
+| `ur_robot_driver` | Core hardware interface and launch files |
+| `ur_controllers` | UR-specific controllers (speed scaling, scaled JTC, etc.) |
+| `ur_calibration` | Tool for extracting kinematics calibration from the robot |
+| `ur_moveit_config` | MoveIt2 configuration for UR robots |
+| `ur_dashboard_msgs` | ROS2 message and service definitions for the dashboard |
+| `ur` | Meta-package for single-command binary installation |

@@ -1,0 +1,253 @@
+---
+title: "UR Dashboard Client: Complete ROS2 Services Reference"
+description: "Complete reference for all ROS2 services advertised by the UR dashboard client node, grouped by category (power, programs, safety, queries) with service types."
+---
+
+The dashboard client node connects to the UR Dashboard Server running on the robot controller and exposes its functionality as ROS2 services. The dashboard server provides high-level robot management operations such as powering the robot on and off, loading and running programs, and querying robot state. This node is started automatically by the driver's launch files.
+
+<Note>
+Some services are only available on specific robot controller versions. Services marked **PolyScope X only** require a PolyScope X robot. Services marked **CB3 only** are not available on e-Series or PolyScope X robots. Mixed availability is noted per service.
+</Note>
+
+## Parameters
+
+<ParamField path="robot_ip" type="string" required>
+  The IP address of the robot controller. The dashboard client uses this to establish a TCP connection to port 29999 on the robot.
+</ParamField>
+
+<ParamField path="receive_timeout" type="float" default="20.0">
+  Timeout in seconds after which a service call to the dashboard server is considered a failure if no response has been received. The default of 20 seconds accommodates operations such as loading large programs, which can take several seconds.
+</ParamField>
+
+## Power management
+
+<AccordionGroup>
+  <Accordion title="power_on — std_srvs/Trigger">
+    Power on the robot motors. After calling this service, call `brake_release` to bring the robot to the `IDLE` state and make it ready for motion.
+  </Accordion>
+
+  <Accordion title="power_off — std_srvs/Trigger">
+    Power off the robot motors.
+  </Accordion>
+
+  <Accordion title="brake_release — std_srvs/Trigger">
+    Release the brakes. If the robot is currently powered off, it will be powered on automatically before releasing the brakes. After a successful call the robot will be in `IDLE` mode.
+  </Accordion>
+
+  <Accordion title="shutdown — std_srvs/Trigger">
+    Shut down the robot controller.
+  </Accordion>
+</AccordionGroup>
+
+## Program management
+
+<AccordionGroup>
+  <Accordion title="load_program — ur_dashboard_msgs/Load">
+    Load a robot program from a file on the robot.
+
+    - On **PolyScope 5**: provide a filename in the robot's programs folder or an absolute path. The filename must include the `.urp` extension.
+    - On **PolyScope X**: provide the program name as shown in the Programs overview on the robot, without the `.urpx` suffix.
+  </Accordion>
+
+  <Accordion title="load_installation — ur_dashboard_msgs/Load">
+    Load a robot installation from a file. Uses the same `ur_dashboard_msgs/Load` service type as `load_program`.
+  </Accordion>
+
+  <Accordion title="play — std_srvs/Trigger">
+    Start execution of a previously loaded program.
+  </Accordion>
+
+  <Accordion title="pause — std_srvs/Trigger">
+    Pause a currently running program.
+  </Accordion>
+
+  <Accordion title="stop — std_srvs/Trigger">
+    Stop program execution on the robot.
+  </Accordion>
+
+  <Accordion title="resume — std_srvs/Trigger">
+    Resume a paused program.
+
+    <Note>PolyScope X only — requires version >= 10.11.0.</Note>
+  </Accordion>
+
+  <Accordion title="get_loaded_program — ur_dashboard_msgs/GetLoadedProgram">
+    Get the name of the currently loaded program. Returns the program name in the `program_name` field and the raw dashboard server answer in the `answer` field.
+  </Accordion>
+
+  <Accordion title="program_running — ur_dashboard_msgs/IsProgramRunning">
+    Query whether there is currently a program running on the robot. Returns a `program_running` boolean field.
+  </Accordion>
+
+  <Accordion title="program_saved — ur_dashboard_msgs/IsProgramSaved">
+    Query whether the current program has been saved. Returns a `program_saved` boolean and the `program_name`.
+  </Accordion>
+
+  <Accordion title="program_state — ur_dashboard_msgs/GetProgramState">
+    Query the current program state (`STOPPED`, `PLAYING`, or `PAUSED`). Returns a `ProgramState` message and the `program_name`.
+  </Accordion>
+
+  <Accordion title="quit — ur_dashboard_msgs/GetLoadedProgram">
+    Disconnect from the dashboard service.
+  </Accordion>
+</AccordionGroup>
+
+## Safety
+
+<AccordionGroup>
+  <Accordion title="restart_safety — std_srvs/Trigger">
+    Restart the safety system after a safety fault or violation. After rebooting, the robot will be in Power Off state.
+
+    <Warning>
+      Always ensure it is safe to restart the safety system before calling this service. It is highly recommended to review the error log (via PolyScope or SSH) before proceeding.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="unlock_protective_stop — std_srvs/Trigger">
+    Dismiss a protective stop to allow robot movement to continue.
+
+    <Warning>
+      It is the responsibility of the user to ensure the cause of the protective stop has been resolved before calling this service.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="close_safety_popup — std_srvs/Trigger">
+    Close a safety popup on the teach pendant.
+  </Accordion>
+
+  <Accordion title="close_popup — std_srvs/Trigger">
+    Close a non-safety popup on the teach pendant.
+  </Accordion>
+
+  <Accordion title="popup — ur_dashboard_msgs/Popup">
+    Show a popup message on the UR teach pendant. Provide the message text in the `message` field.
+  </Accordion>
+</AccordionGroup>
+
+## Status queries
+
+<AccordionGroup>
+  <Accordion title="get_robot_mode — ur_dashboard_msgs/GetRobotMode">
+    Query the current robot mode. Returns a `RobotMode` message containing the integer mode value. Possible values are defined in `ur_dashboard_msgs/msg/RobotMode` — for example `POWER_OFF` (3), `IDLE` (5), and `RUNNING` (7).
+  </Accordion>
+
+  <Accordion title="get_safety_mode — ur_dashboard_msgs/GetSafetyMode">
+    Query the current safety mode. Returns a `SafetyMode` message. Possible values include `NORMAL` (1), `PROTECTIVE_STOP` (3), `ROBOT_EMERGENCY_STOP` (7), and others defined in `ur_dashboard_msgs/msg/SafetyMode`.
+  </Accordion>
+
+  <Accordion title="is_in_remote_control — ur_dashboard_msgs/IsInRemoteControl">
+    Query whether the robot is currently in remote control mode. Returns a `remote_control` boolean.
+  </Accordion>
+
+  <Accordion title="add_to_log — ur_dashboard_msgs/AddToLog">
+    Add a message to the robot's internal log. Provide the message text in the `message` field.
+  </Accordion>
+
+  <Accordion title="raw_request — ur_dashboard_msgs/RawRequest">
+    General-purpose service for sending arbitrary commands to the dashboard server. Use the `query` field to pass any dashboard command string. Returns the raw `answer` string from the server. Useful for accessing dashboard functionality not covered by the typed services.
+  </Accordion>
+
+  <Accordion title="connect — std_srvs/Trigger">
+    Reconnect to the dashboard server. Useful if the connection was lost.
+  </Accordion>
+</AccordionGroup>
+
+## Operational mode management
+
+<AccordionGroup>
+  <Accordion title="get_operational_mode — ur_dashboard_msgs/GetOperationalMode">
+    Get the current operational mode of the robot. Returns an `OperationalMode` message with values `MANUAL` or `AUTOMATIC`.
+
+    <Note>Available on PolyScope 5 and PolyScope X >= 10.12.0.</Note>
+  </Accordion>
+
+  <Accordion title="set_operational_mode — ur_dashboard_msgs/SetOperationalMode">
+    Set the operational mode of the robot. When this has been called, the teach pendant cannot change the operational mode until `clear_operational_mode` is called.
+
+    <Note>PolyScope 5 only.</Note>
+  </Accordion>
+
+  <Accordion title="clear_operational_mode — std_srvs/Trigger">
+    Re-enable operational mode changes from PolyScope and re-enable the user password.
+  </Accordion>
+</AccordionGroup>
+
+## PolyScope X-only services
+
+<AccordionGroup>
+  <Accordion title="get_programs — ur_dashboard_msgs/GetPrograms">
+    Get a list of all programs stored on the robot. Returns an array of `ProgramInformation` messages, each containing the program name, description, creation date, last saved date, last modified date, and program state (`DRAFT` or `FINAL`).
+
+    <Note>Requires PolyScope X >= 10.12.0.</Note>
+  </Accordion>
+
+  <Accordion title="download_program — ur_dashboard_msgs/DownloadProgram">
+    Download a program from the robot and save it locally as a `.urpx` file. Provide `program_name` (the name on the robot) and `target_path` (the local file path).
+
+    <Note>Requires PolyScope X >= 10.12.0.</Note>
+  </Accordion>
+
+  <Accordion title="upload_program — ur_dashboard_msgs/UploadProgram">
+    Upload a program to the robot. Provide `file_path` pointing to a local `.urpx` file. Fails if a program with the same name already exists on the robot.
+
+    <Note>Requires PolyScope X >= 10.12.0.</Note>
+  </Accordion>
+
+  <Accordion title="update_program — ur_dashboard_msgs/UpdateProgram">
+    Update an existing program on the robot. Fails if the program does not exist or is currently loaded.
+
+    <Note>Requires PolyScope X >= 10.12.0.</Note>
+  </Accordion>
+</AccordionGroup>
+
+## CB3 and PolyScope 5 services
+
+<AccordionGroup>
+  <Accordion title="get_polyscope_version — ur_dashboard_msgs/GetPolyScopeVersion">
+    Get the PolyScope software version of the robot. Returns a `VersionInformation` message with `major`, `minor`, `bugfix`, and `build` fields.
+
+    <Note>Available on CB3 and PolyScope 5 robots.</Note>
+  </Accordion>
+
+  <Accordion title="get_serial_number — ur_dashboard_msgs/GetSerialNumber">
+    Get the serial number of the robot as a `uint64`.
+
+    <Note>Available on CB3 and PolyScope 5 robots.</Note>
+  </Accordion>
+
+  <Accordion title="get_robot_model — ur_dashboard_msgs/GetRobotModel">
+    Get the robot model in the format `URx` (for example, `UR5`). Note that this call does not differentiate between e-Series and CB3, so `UR5` and `UR5e` both report as `UR5`.
+
+    <Note>Available on CB3 and PolyScope 5 robots.</Note>
+  </Accordion>
+
+  <Accordion title="get_safety_status — ur_dashboard_msgs/GetSafetyStatus">
+    Get the detailed safety status of the robot system. This is more granular than `get_safety_mode` and should be preferred when available.
+
+    <Note>PolyScope 5 only.</Note>
+  </Accordion>
+
+  <Accordion title="get_user_role — ur_dashboard_msgs/GetUserRole">
+    Get the current user role on the robot. Returns a `UserRole` message with possible values: `PROGRAMMER`, `OPERATOR`, `NONE`, `LOCKED`, or `RESTRICTED`.
+
+    <Note>CB3 only.</Note>
+  </Accordion>
+
+  <Accordion title="set_user_role — ur_dashboard_msgs/SetUserRole">
+    Set the user role on the robot. Provide a `UserRole` message.
+
+    <Note>CB3 only.</Note>
+  </Accordion>
+
+  <Accordion title="generate_flight_report — ur_dashboard_msgs/GenerateFlightReport">
+    Generate a flight report of the chosen type (`controller`, `software`, or `system`, defaulting to `system`). At least 30 seconds must pass between triggering software or controller reports.
+
+    <Note>Available on CB3 and PolyScope 5 robots.</Note>
+  </Accordion>
+
+  <Accordion title="generate_support_file — ur_dashboard_msgs/GenerateSupportFile">
+    Generate a support file at a specified location relative to the robot's programs folder. The directory must exist prior to calling this service. Defaults to saving in the programs folder root.
+
+    <Note>Available on CB3 and PolyScope 5 robots.</Note>
+  </Accordion>
+</AccordionGroup>

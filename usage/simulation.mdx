@@ -1,0 +1,130 @@
+---
+title: "Simulate a UR Robot with URSim or ros2_control Mock"
+description: "Use URSim Docker images or ros2_control mock hardware to develop and test the UR driver without a physical robot, including known mock hardware limitations."
+---
+
+The ROS2 driver supports two simulation approaches: the official URSim simulator, which is functionally equivalent to a real robot from the driver's perspective, and ros2_control's mock hardware, which mirrors commands to states without any robot kinematics. Both let you develop, test, and validate launch files and controller configurations before connecting to physical hardware.
+
+## URSim
+
+Universal Robots provides Docker images of the URSim simulator for each PolyScope generation. The driver treats URSim identically to a real robot.
+
+### Available images
+
+<CardGroup cols={3}>
+  <Card title="PolyScope X" icon="docker" href="https://hub.docker.com/r/universalrobots/ursim_polyscopex">
+    For UR robots running PolyScope X (e.g. UR20, UR30).
+  </Card>
+  <Card title="PolyScope 5" icon="docker" href="https://hub.docker.com/r/universalrobots/ursim_e-series">
+    For e-Series robots (UR3e, UR5e, UR10e, UR16e, etc.).
+  </Card>
+  <Card title="CB3" icon="docker" href="https://hub.docker.com/r/universalrobots/ursim_cb3">
+    For CB3-generation robots (UR3, UR5, UR10).
+  </Card>
+</CardGroup>
+
+### Starting URSim
+
+The `ur_client_library` package ships a helper script that provides a unified startup interface regardless of PolyScope version:
+
+```bash
+ros2 run ur_client_library start_ursim.sh -m <ur_type> -v <ursim_version>
+```
+
+- `-m` sets the robot model (defaults to UR5e if omitted).
+- `-v` sets the PolyScope version (defaults to the latest PolyScope 5 image if omitted).
+
+**Example** — start a UR20 with PolyScope X 10.8.0:
+
+```bash
+ros2 run ur_client_library start_ursim.sh -v 10.8.0 -m ur20
+```
+
+Expected output:
+
+```
+ROBOT_MODEL: ur20
+ROBOT_SERIES: polyscopex
+URSIM_VERSION: 10.8.0
+5b140a83f8600c7ada0b7d75bc7a5808667adbeec77387e8c73b093f10fd2379
+Starting URSim. Waiting for UrService to be up...................................
+UrService is up
+Installing URCapX /home/feex/.ursim/polyscopex/urcaps/external-control-0.1.0.urcapx
+
+
+To access PolyScopeX, open the following URL in a web browser.
+
+
+        http://192.168.56.101
+
+To exit, press CTRL+C
+```
+
+The script also installs the External Control URCap automatically.
+
+### Accessing the simulator GUI
+
+<Tabs>
+  <Tab title="PolyScope 5 / CB3">
+    Open the following URL in a web browser:
+
+    ```
+    http://192.168.56.101:6080/vnc.html
+    ```
+
+    This opens a VNC session showing the teach pendant interface.
+  </Tab>
+  <Tab title="PolyScope X">
+    Open the following URL in a web browser:
+
+    ```
+    http://192.168.56.101
+    ```
+
+    PolyScope X runs a native web UI and does not require VNC.
+  </Tab>
+</Tabs>
+
+### Connecting the driver to URSim
+
+Once URSim is running, launch the driver pointing at the simulator's IP address (the default is `192.168.56.101`):
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py \
+  ur_type:=ur20 \
+  robot_ip:=192.168.56.101 \
+  launch_rviz:=true
+```
+
+After the driver starts, follow the same [startup steps](/usage/startup) as with a real robot — load the External Control program in the simulator and press **Play** (or use headless mode). When you move the robot in PolyScope, the RViz visualization updates accordingly.
+
+## Mock hardware
+
+For testing launch files, controller configurations, and URDF descriptions without any robot or simulator, use ros2_control's `MockSystem` by passing `use_mock_hardware:=true`:
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py \
+  ur_type:=ur5e \
+  robot_ip:=yyy.yyy.yyy.yyy \
+  use_mock_hardware:=true
+```
+
+The mock system mirrors every command directly to the joint states, so controllers and ROS interfaces behave as expected — but there is no real kinematics or physics.
+
+<Note>
+  Several driver features do not work with mock hardware:
+
+  - The TCP pose broadcaster is disabled.
+  - The passthrough trajectory controller does not execute `follow_joint_trajectory` actions.
+  - The force mode controller does not respond to force mode requests.
+  - The GPIO controller cannot verify I/O pin state changes and will report a failure when attempting to set a pin.
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="Startup guide" icon="rocket" href="/usage/startup">
+    Full startup sequence for real and simulated robots.
+  </Card>
+  <Card title="Operation modes" icon="toggle-left" href="/usage/operation-modes">
+    When to use headless mode vs. teach pendant mode.
+  </Card>
+</CardGroup>

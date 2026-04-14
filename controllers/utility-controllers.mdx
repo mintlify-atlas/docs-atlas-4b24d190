@@ -1,0 +1,298 @@
+---
+title: "UR Utility Controllers: I/O, Speed Scaling, TCP Pose"
+description: "Reference for UR ROS2 utility controllers: io_and_status_controller, speed scaling, TCP pose broadcaster, joint states, robot configuration, and FT sensor."
+---
+
+Utility controllers provide access to UR robot-specific features that complement motion control. They are not motion controllers and do not claim joint command interfaces, so they run alongside any motion controller that is active. This page covers `io_and_status_controller`, `speed_scaling_state_broadcaster`, `tcp_pose_broadcaster`, `joint_state_broadcaster`, `ur_configuration_controller`, and `force_torque_sensor_broadcaster`.
+
+<Note>
+For motion controllers, see [Position and velocity controllers](/controllers/position-velocity) and [Force and torque controllers](/controllers/force-torque).
+</Note>
+
+---
+
+## `io_and_status_controller`
+
+**Type:** `ur_controllers/GPIOController`
+
+The `io_and_status_controller` is the primary interface for UR robot I/O and status monitoring. It is **always active** and provides access to digital and analog I/O pins, robot operational status, force/torque sensor zeroing, payload configuration, and URScript program control. It is also the controller through which you can send raw URScript commands to the robot.
+
+### Published topics
+
+| Topic | Type | Description |
+|---|---|---|
+| `~/io_states` | `ur_msgs/msg/IOStates` | State of all digital and analog I/O ports |
+| `~/robot_mode` | `ur_dashboard_msgs/msg/RobotMode` | Current robot mode (`POWER_OFF`, `IDLE`, `RUNNING`, etc.) |
+| `~/robot_program_running` | `std_msgs/msg/Bool` | Whether the External Control program is running. If `false`, no motion commands can be accepted |
+| `~/safety_mode` | `ur_dashboard_msgs/msg/SafetyMode` | Current safety mode (`NORMAL`, `PROTECTIVE_STOP`, `ROBOT_EMERGENCY_STOP`, etc.) |
+| `~/tool_data` | `ur_msgs/msg/ToolDataMsg` | Robot tool configuration data |
+
+### Advertised services
+
+<AccordionGroup>
+  <Accordion title="~/set_io — Set a digital output">
+    **Type:** `ur_msgs/srv/SetIO`
+
+    Set the state of a digital output pin on the robot.
+
+    ```bash
+    ros2 service call /io_and_status_controller/set_io \
+      ur_msgs/srv/SetIO \
+      "{fun: 1, pin: 0, state: 1.0}"
+    ```
+
+    `fun` selects the I/O function: `1` = digital output, `2` = flag, `3` = analog output. `pin` is the zero-indexed pin number.
+  </Accordion>
+  <Accordion title="~/set_analog_output — Set an analog output">
+    **Type:** `ur_msgs/srv/SetAnalogOutput`
+
+    Set an analog output value on the robot. This also allows specifying the output domain (current or voltage).
+
+    ```bash
+    ros2 service call /io_and_status_controller/set_analog_output \
+      ur_msgs/srv/SetAnalogOutput \
+      "{pin: 0, state: 0.5, domain: 0}"
+    ```
+  </Accordion>
+  <Accordion title="~/set_payload — Change payload on the fly">
+    **Type:** `ur_msgs/srv/SetPayload`
+
+    Update the robot's payload mass and center of gravity without restarting the driver.
+
+    ```bash
+    ros2 service call /io_and_status_controller/set_payload \
+      ur_msgs/srv/SetPayload \
+      "{mass: 1.5, center_of_gravity: {x: 0.0, y: 0.0, z: 0.05}}"
+    ```
+  </Accordion>
+  <Accordion title="~/set_speed_slider — Set the speed slider value">
+    **Type:** `ur_msgs/srv/SetSpeedSliderFraction`
+
+    Programmatically set the speed slider on the teach pendant to a fraction in `[0, 1]`.
+
+    ```bash
+    ros2 service call /io_and_status_controller/set_speed_slider \
+      ur_msgs/srv/SetSpeedSliderFraction \
+      "{speed_slider_fraction: 0.5}"
+    ```
+  </Accordion>
+  <Accordion title="~/zero_ftsensor — Zero the force/torque sensor">
+    **Type:** `std_srvs/srv/Trigger`
+
+    Zero the force/torque sensor reading. Call this before activating force mode and before the tool makes contact with the environment.
+
+    ```bash
+    ros2 service call /io_and_status_controller/zero_ftsensor \
+      std_srvs/srv/Trigger
+    ```
+  </Accordion>
+  <Accordion title="~/resend_robot_program — Restart external control">
+    **Type:** `std_srvs/srv/Trigger`
+
+    When running in [headless mode](/usage/operation-modes), this service restarts the External Control program on the robot without needing to interact with the teach pendant.
+
+    ```bash
+    ros2 service call /io_and_status_controller/resend_robot_program \
+      std_srvs/srv/Trigger
+    ```
+  </Accordion>
+  <Accordion title="~/hand_back_control — Exit external control">
+    **Type:** `std_srvs/srv/Trigger`
+
+    Exit the External Control program node on the robot. The robot program continues with whatever instruction follows the External Control node on the teach pendant.
+
+    ```bash
+    ros2 service call /io_and_status_controller/hand_back_control \
+      std_srvs/srv/Trigger
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Monitoring `robot_program_running`
+
+The `~/robot_program_running` topic is an important health signal. If it publishes `false`, the robot is not executing the External Control URScript program and will not respond to any motion commands. Use it to build watchdog logic or to display a status indicator in your application.
+
+```bash
+ros2 topic echo /io_and_status_controller/robot_program_running
+```
+
+---
+
+## `speed_scaling_state_broadcaster`
+
+**Type:** `ur_controllers/SpeedScalingStateBroadcaster`
+
+Publishes the current execution speed as a fraction in `[0, 1]`. The value is calculated as the product of:
+
+- **`speed_scaling`** — the value shown by the speed slider on the teach pendant
+- **`target_speed_fraction`** — the fraction imposed by the controller due to safety limits
+
+A value of `1.0` means the robot is executing at full speed. A value of `0.0` means execution is fully paused (for example, due to an E-stop, protective stop, or the speed slider being at zero).
+
+This broadcaster is **active by default** and read-only — it can run alongside any controller.
+
+### Published topics
+
+| Topic | Type | Description |
+|---|---|---|
+| `~/speed_scaling` | `std_msgs/msg/Float64` | Current speed scaling factor, in `[0, 1]` |
+
+### Example: monitor speed scaling
+
+```bash
+ros2 topic echo /speed_scaling_state_broadcaster/speed_scaling
+```
+
+### How it interacts with trajectory controllers
+
+- **`joint_trajectory_controller`**: reads this value to scale trajectory progress on the ROS PC, keeping path error minimal when the robot is slowed.
+- **`passthrough_trajectory_controller`** and **`motion_primitive_forward_controller`**: speed scaling is handled directly by the robot controller, so the broadcaster is informational only in those modes.
+- **Streaming controllers** (`forward_position_controller`, `forward_velocity_controller`): do not use this value automatically. You must read it yourself and adapt your command stream accordingly.
+
+### Configuration
+
+```yaml
+speed_scaling_state_broadcaster:
+  ros__parameters:
+    state_publish_rate: 100.0
+    tf_prefix: ""
+```
+
+---
+
+## `tcp_pose_broadcaster`
+
+**Type:** `pose_broadcaster/PoseBroadcaster`
+
+Publishes the robot's TCP pose using the robot's own internal kinematics and calibration — not the URDF model forward kinematics. This means the published pose reflects the robot's actual hardware calibration exactly, and also takes into account any TCP offset configured on the teach pendant.
+
+This broadcaster is **active by default** (except when using mock hardware) and read-only.
+
+### Published topics and transforms
+
+| Output | Type | Description |
+|---|---|---|
+| `tcp_pose_broadcaster/pose` | `geometry_msgs/msg/PoseStamped` | TCP pose in the `base` frame |
+| TF transform | `tf2` | `base` → `tool0_controller` transform |
+
+<Note>
+When a tool is configured on the teach pendant, `tool0_controller` reflects the tool's TCP offset. The URDF-based `tool0` frame does not include this offset. Setting up the [robot calibration](/advanced/calibration) aligns `tool0` and `tool0_controller` exactly when no tool offset is configured.
+</Note>
+
+All frame names are prefixed with `tf_prefix` if it is set.
+
+### Configuration
+
+```yaml
+tcp_pose_broadcaster:
+  ros__parameters:
+    frame_id: base
+    pose_name: tcp_pose
+    tf:
+      child_frame_id: tool0_controller
+```
+
+---
+
+## `joint_state_broadcaster`
+
+**Type:** `joint_state_broadcaster/JointStateBroadcaster`
+
+Publishes all joint positions, velocities, and motor currents on the `joint_states` topic. This is the standard ros2_control broadcaster used by MoveIt, rviz2, and most ROS 2 tools that need to know where the robot's joints are.
+
+This broadcaster is **active by default** and read-only.
+
+### Published topics
+
+| Topic | Type | Description |
+|---|---|---|
+| `joint_states` | `sensor_msgs/msg/JointState` | Joint positions (rad), velocities (rad/s), and motor currents (A) for all six joints |
+
+<Note>
+The `effort` field in `JointState` contains motor currents reported by the joints, not physical joint torques. Do not use it as torque feedback for control applications.
+</Note>
+
+---
+
+## `ur_configuration_controller`
+
+**Type:** `ur_controllers/URConfigurationController`
+
+Provides access to UR-specific robot configuration data. This controller is **always active**.
+
+### Advertised services
+
+| Service | Type | Description |
+|---|---|---|
+| `~/get_software_version` | `ur_msgs/srv/GetRobotSoftwareVersion` | Returns the robot's PolyScope software version (major, minor, patch, and build number) |
+
+### Example: query robot software version
+
+```bash
+ros2 service call /ur_configuration_controller/get_software_version \
+  ur_msgs/srv/GetRobotSoftwareVersion
+```
+
+For a robot running PolyScope 5.12.1, the response contains major version `5`, minor version `12`, patch version `1`.
+
+### Configuration
+
+```yaml
+ur_configuration_controller:
+  ros__parameters:
+    tf_prefix: ""
+```
+
+---
+
+## `force_torque_sensor_broadcaster`
+
+**Type:** `force_torque_sensor_broadcaster/ForceTorqueSensorBroadcaster`
+
+Publishes the TCP wrench from the robot's built-in force/torque sensor. This broadcaster is **active by default**, read-only, and can run alongside any other controller.
+
+### Published topics
+
+| Topic | Type | Description |
+|---|---|---|
+| `ft_data` | `geometry_msgs/msg/WrenchStamped` | TCP wrench (forces in N, torques in Nm) in the `tool0_controller` frame |
+
+Before using force data for control, zero the sensor:
+
+```bash
+ros2 service call /io_and_status_controller/zero_ftsensor std_srvs/srv/Trigger
+```
+
+For full details on force-mode usage and safety considerations when using force sensing for control, see [Force and torque controllers](/controllers/force-torque).
+
+### Configuration
+
+```yaml
+force_torque_sensor_broadcaster:
+  ros__parameters:
+    sensor_name: tcp_fts_sensor
+    state_interface_names:
+      - force.x
+      - force.y
+      - force.z
+      - torque.x
+      - torque.y
+      - torque.z
+    frame_id: tool0_controller
+    topic_name: ft_data
+```
+
+---
+
+## Summary
+
+All utility controllers are read-only broadcasters or service-only controllers. They do not claim joint command interfaces and run alongside any active motion controller.
+
+| Controller | Active by default | Publishes | Services |
+|---|---|---|---|
+| `io_and_status_controller` | Yes | `io_states`, `robot_mode`, `robot_program_running`, `safety_mode`, `tool_data` | `set_io`, `set_analog_output`, `set_payload`, `set_speed_slider`, `zero_ftsensor`, `resend_robot_program`, `hand_back_control` |
+| `speed_scaling_state_broadcaster` | Yes | `speed_scaling` | — |
+| `tcp_pose_broadcaster` | Yes (real hardware only) | `pose`, TF `tool0_controller` | — |
+| `joint_state_broadcaster` | Yes | `joint_states` | — |
+| `ur_configuration_controller` | Yes | — | `get_software_version` |
+| `force_torque_sensor_broadcaster` | Yes | `ft_data` | — |

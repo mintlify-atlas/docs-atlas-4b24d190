@@ -1,0 +1,120 @@
+---
+title: "Install the Universal Robots ROS2 Driver (apt/source)"
+description: "Install the UR ROS2 driver via apt or build from source. Covers distro compatibility, colcon workspace setup, and real-time kernel recommendations."
+---
+
+The `ur_robot_driver` is available as a binary Debian package for all supported ROS2 distributions and can also be built from source when you need unreleased changes or want to contribute. Binary installation is recommended for most users.
+
+<Note>
+  Controlling the robot requires strict cycle times. Use a low-latency or `PREEMPT_RT`-patched kernel and a direct network connection between the ROS PC and the robot controller — avoid switches. See [Real-time setup](/advanced/real-time-setup) for details.
+</Note>
+
+## ROS2 distro compatibility
+
+| Distribution | Branch | Status |
+|---|---|---|
+| Rolling | `main` | Active development |
+| Kilted | `kilted` | Supported |
+| Jazzy | `jazzy` | Supported |
+| Humble | `humble` | Supported |
+| Iron, Galactic, Foxy | EOL branches | No further updates |
+
+<Tabs>
+  <Tab title="Binary install">
+
+## Install from binary packages
+
+Binary installation is the fastest way to get started. The `ur` meta-package installs all required components in one command.
+
+<Steps>
+  <Step title="Install ROS2">
+    Follow the official [ROS2 installation guide](https://docs.ros.org/en/rolling/Installation/Ubuntu-Install-Debians.html) for your target distribution, then source it:
+
+    ```bash
+    source /opt/ros/${ROS_DISTRO}/setup.bash
+    ```
+  </Step>
+  <Step title="Install the driver">
+    Install the `ur` meta-package for your active ROS2 distro:
+
+    ```bash
+    sudo apt-get install ros-${ROS_DISTRO}-ur
+    ```
+
+    This installs `ur_robot_driver`, `ur_controllers`, `ur_calibration`, `ur_moveit_config`, `ur_dashboard_msgs`, and the `ur` meta-package.
+  </Step>
+</Steps>
+
+  </Tab>
+  <Tab title="Build from source">
+
+## Build from source
+
+Build from source when you need a specific unreleased commit, want to contribute, or need to patch an upstream dependency. Follow these steps exactly — pulling and building an existing workspace without following this sequence can fail if upstream APIs have changed.
+
+<Steps>
+  <Step title="Install ROS2">
+    Follow the official [ROS2 installation guide](https://docs.ros.org/en/rolling/Installation/Ubuntu-Install-Debians.html), then source it:
+
+    ```bash
+    source /opt/ros/${ROS_DISTRO}/setup.bash
+    ```
+  </Step>
+  <Step title="Install build tools">
+    Make sure `colcon` and its extensions and `vcs` are present:
+
+    ```bash
+    sudo apt install python3-colcon-common-extensions python3-vcstool
+    ```
+  </Step>
+  <Step title="Create a workspace">
+    ```bash
+    export COLCON_WS=~/workspace/ros_ur_driver
+    mkdir -p $COLCON_WS/src
+    ```
+  </Step>
+  <Step title="Clone and set up dependencies">
+    Replace `<branch>` with `humble`, `jazzy`, `kilted`, or `main` (Rolling):
+
+    ```bash
+    cd $COLCON_WS
+    git clone -b <branch> https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver.git src/Universal_Robots_ROS2_Driver
+    vcs import src --skip-existing --input src/Universal_Robots_ROS2_Driver/Universal_Robots_ROS2_Driver-not-released.${ROS_DISTRO}.repos
+    rosdep update
+    rosdep install --ignore-src --from-paths src -y
+    ```
+  </Step>
+  <Step title="Build and source">
+    ```bash
+    colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
+    source install/setup.bash
+    ```
+  </Step>
+</Steps>
+
+### Resolving upstream build failures
+
+If a consecutive pull results in build errors, the upstream binary packages may lag behind the source. Check the [detailed build status](https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver/blob/main/ci_status.md). When binary builds are red but semi-binary builds are green, build upstream dependencies from source using the full repos file:
+
+```bash
+cd $COLCON_WS
+vcs import src --skip-existing --input src/Universal_Robots_ROS2_Driver/Universal_Robots_ROS2_Driver.${ROS_DISTRO}.repos
+rosdep update
+rosdep install --ignore-src --from-paths src -y
+```
+
+  </Tab>
+</Tabs>
+
+## Real-time kernel recommendations
+
+The driver benefits significantly from a real-time or low-latency kernel. Without one, the OS scheduler can introduce jitter that disrupts the 500 Hz control loop, causing the robot to slow down or stop.
+
+<CardGroup cols={2}>
+  <Card title="Real-time setup guide" icon="gauge-high" href="/advanced/real-time-setup">
+    Step-by-step instructions for installing and configuring a `PREEMPT_RT` kernel
+  </Card>
+  <Card title="Robot setup" icon="robot" href="/robot-setup">
+    Configure your UR robot's network and install the External Control URCap
+  </Card>
+</CardGroup>

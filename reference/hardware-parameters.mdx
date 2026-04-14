@@ -1,0 +1,141 @@
+---
+title: "UR Hardware Interface Parameters: Complete Reference"
+description: "All ros2_control xacro parameters for the UR hardware interface — network, kinematics, servoj tuning, tool communication, and headless mode configuration."
+---
+
+The UR hardware interface is configured through parameters passed in the `ros2_control` xacro definition. These parameters control network connectivity, RTDE recipe paths, servoing behavior, and tool communication settings. All parameters listed as **Required** have no default and must be explicitly provided; omitting them will prevent the hardware interface from initializing.
+
+<Note>
+Parameters are not set at runtime via ROS parameters — they are embedded in the URDF/xacro and parsed when the controller manager loads the hardware component. To change a parameter value you must regenerate the URDF and restart the driver.
+</Note>
+
+## Connection and network
+
+<ParamField path="robot_ip" type="string" required>
+  The IP address of the robot controller. This is used to establish the RTDE, dashboard, and reverse connections from the driver to the robot.
+
+  **Example:** `192.168.56.101`
+</ParamField>
+
+<ParamField path="reverse_port" type="integer" required>
+  Port opened on the host machine used for the reverse connection from the robot controller back to the driver. This port must be free before the driver starts.
+
+  Configure the same port in the External Control URCap installation on the robot.
+</ParamField>
+
+<ParamField path="script_sender_port" type="integer" required>
+  Network port on the host machine from which the driver serves the URScript program that runs on the robot. This port must be free before the driver starts and must match the value configured in the External Control URCap.
+</ParamField>
+
+## URScript and recipe files
+
+<ParamField path="script_filename" type="string" required>
+  Absolute path to the URScript file that will be sent to the robot. This script establishes the external control loop on the robot side. The default script is provided by the driver package.
+</ParamField>
+
+<ParamField path="input_recipe_filename" type="string" required>
+  Absolute path to the file containing the RTDE input recipe. This recipe defines which data fields the driver writes to the robot controller over the RTDE interface.
+</ParamField>
+
+<ParamField path="output_recipe_filename" type="string" required>
+  Absolute path to the file containing the RTDE output recipe. This recipe defines which data fields the driver reads from the robot controller over the RTDE interface.
+</ParamField>
+
+## Kinematics calibration
+
+<ParamField path="kinematics/hash" type="string" required>
+  Hash of the calibration reported by the robot. Used to validate that the robot description's kinematic parameters match the actual factory calibration stored on the robot.
+
+  If the hashes do not match, the driver will print an error and continue, but Cartesian poses of the end-effector may be inaccurate. Use the `ur_calibration` package to extract the correct hash from your robot. See [calibration](/advanced/calibration) for instructions.
+</ParamField>
+
+## Motion control
+
+<ParamField path="servoj_gain" type="integer" required>
+  Gain parameter for the underlying `servoj` URScript command. Used whenever position control is active.
+
+  - Higher values produce sharper, more responsive motions.
+  - Values that are too high may introduce jerks and vibrations.
+
+  **Valid range:** `[100, 3000]`
+</ParamField>
+
+<ParamField path="servoj_lookahead_time" type="float" required>
+  Lookahead time parameter (in seconds) for the underlying `servoj` URScript command. Used whenever position control is active.
+
+  - Higher values produce smoother trajectories.
+  - Higher values also increase the delay between commands sent from ROS and actual robot motion.
+
+  **Unit:** seconds — **Valid range:** `[0.03, 0.2]`
+</ParamField>
+
+## Read behavior
+
+<ParamField path="non_blocking_read" type="boolean" default="true">
+  Controls whether the `ros2_control` update cycle blocks waiting for new data from the robot.
+
+  - `true` — The control cycle does not wait for the robot; better real-time performance is achievable.
+  - `false` — The control cycle waits for the robot to send a status update before proceeding.
+
+  <Warning>
+    This parameter **must** be set to `true` when combining the UR hardware interface with other hardware components in the same controller manager instance.
+  </Warning>
+</ParamField>
+
+## Headless mode
+
+<ParamField path="headless_mode" type="boolean" default="false">
+  When set to `true`, the driver sends the URScript program directly to the robot without requiring the External Control URCap to be running on the teach pendant.
+
+  On e-Series robots, headless mode requires the robot to be in **Remote Control** mode. See [operation modes](/usage/operation-modes) for details.
+</ParamField>
+
+## Tool communication
+
+The following parameters are only evaluated when `use_tool_communication` is `true`. When tool communication is enabled, all of them become required. Settings configured here are applied as soon as the UR program starts on the robot. The same settings can also be configured from the robot teach pendant — remember to save the installation on the robot to persist the settings across reboots.
+
+<ParamField path="use_tool_communication" type="boolean" required>
+  Set to `true` to forward the tool's RS485 interface to the ROS machine. This feature is only available on e-Series robot models.
+
+  When enabled, the `tool_baud_rate`, `tool_parity`, `tool_stop_bits`, `tool_rx_idle_chars`, `tool_tx_idle_chars`, and `tool_voltage` parameters are all required. See [tool communication setup](/advanced/tool-communication) for full setup instructions.
+</ParamField>
+
+<ParamField path="tool_baud_rate" type="integer" required>
+  Baud rate for the tool's RS485 serial interface. Applied when the UR program starts. Only evaluated when `use_tool_communication` is `true`.
+
+  Refer to the UR documentation for the list of valid baud rates supported by your robot model.
+</ParamField>
+
+<ParamField path="tool_parity" type="integer" required>
+  Parity setting for the tool's RS485 serial interface. Only evaluated when `use_tool_communication` is `true`.
+
+  | Value | Meaning |
+  |---|---|
+  | `0` | None |
+  | `1` | Odd |
+  | `2` | Even |
+</ParamField>
+
+<ParamField path="tool_stop_bits" type="integer" required>
+  Number of stop bits for the tool's RS485 serial interface. Only evaluated when `use_tool_communication` is `true`.
+
+  **Valid values:** `1` or `2`
+</ParamField>
+
+<ParamField path="tool_rx_idle_chars" type="float" required>
+  Number of idle characters for the RX unit of the tool's RS485 serial interface. Only evaluated when `use_tool_communication` is `true`.
+
+  **Valid range:** `[1.0, 40.0]`
+</ParamField>
+
+<ParamField path="tool_tx_idle_chars" type="float" required>
+  Number of idle characters for the TX unit of the tool's RS485 serial interface. Only evaluated when `use_tool_communication` is `true`.
+
+  **Valid range:** `[0.0, 40.0]`
+</ParamField>
+
+<ParamField path="tool_voltage" type="integer" required>
+  Tool supply voltage set as soon as the UR program starts on the robot. Only evaluated when `use_tool_communication` is `true`.
+
+  Refer to the UR documentation for supported voltage values for your robot model.
+</ParamField>

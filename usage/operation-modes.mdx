@@ -1,0 +1,112 @@
+---
+title: "Driver Operation Modes: Teach Pendant vs. Headless"
+description: "Explains the robot's local and remote control modes, and the driver's Teach Pendant and Headless modes — when to use each and how to activate them."
+---
+
+The UR ROS2 driver has two independent dimensions of "mode" that interact with each other. The first is the **robot's control mode** — whether the teach pendant is the sole point of control or whether an external system can issue commands. The second is the **driver's operation mode** — whether the driver relies on the External Control URCap running on the teach pendant, or operates without any teach pendant interaction at all.
+
+## Robot's control modes
+
+PolyScope 5 and PolyScope X robots support two control modes. CB3 robots do not have this distinction and always behave as if in local control mode.
+
+<Tabs>
+  <Tab title="Local control mode">
+    **What it is:** The teach pendant is the single point of control. All program starts and stops must be initiated from the pendant.
+
+    **When to use it:** Development, manual testing, or any situation where an operator should be physically present at the robot.
+
+    **How to activate it:** This is the default mode. No configuration is required.
+
+    **Limitations:** Dashboard server calls that require remote control (such as power-on, brake release, and loading/starting programs) are unavailable. The driver's headless mode cannot be used.
+  </Tab>
+  <Tab title="Remote control mode">
+    **What it is:** The teach pendant is locked. An external system — in this case, the ROS 2 driver — can issue commands including loading and starting programs, powering on the robot, and releasing brakes.
+
+    **When to use it:** Automated test pipelines, CI, or production cells where no operator is present at the pendant.
+
+    **How to activate it (PolyScope 5):** On the teach pendant, go to **Settings → System → Remote Control** and enable it. Refer to the [robot manual](https://myur.universal-robots.com/manuals) for details.
+
+    **How to activate it (PolyScope X):** The option is available in the system settings without requiring explicit enablement beforehand.
+
+    **Limitations:** While in remote control mode, the teach pendant is locked and cannot be used to start any motion, including freedrive.
+
+    <Warning>
+      Enabling remote control mode locks out the teach pendant. Make sure the robot is in a known safe state before switching modes.
+    </Warning>
+  </Tab>
+</Tabs>
+
+Remote control mode is required for a number of driver features:
+
+- [Headless mode](#headless-mode) (see below)
+- [Sending script code](/advanced/script-code) to the robot via the script command interface
+- Dashboard operations such as restarting after protective/emergency stop, powering on, and loading or starting programs
+
+## Driver's operation modes
+
+The driver also has two fundamentally different ways of communicating with the robot controller.
+
+<Tabs>
+  <Tab title="Teach Pendant mode">
+    **What it is:** The driver provides a URScript program to the External Control URCap. The URCap requests this script from the driver over the network and executes it once the program reaches that node. This is the default mode.
+
+    **When to use it:** Most deployments. It gives the operator full visibility and control via the teach pendant, and allows the teach pendant program to combine External Control nodes with other program nodes.
+
+    **How to activate it:** Install the External Control URCap, create a program containing the External Control node, set the correct driver host IP and port (default `script_sender_port`: `50002`), then press **Play** on the pendant.
+
+    **Limitations:**
+    - The running program stops if another program is sent to the robot or if any motion-related button is pressed on the teach pendant.
+    - After any such interruption, the program must be restarted from the pendant (or via the dashboard in remote control mode) before the driver can send commands again.
+    - When the program is stopped, the driver logs `Connection to reverse interface dropped.`
+
+    <Note>
+      You can combine Teach Pendant mode with the robot's remote control mode. In that case, load and start the External Control program using the dashboard client's `load_program` and `play` services rather than the pendant directly.
+    </Note>
+  </Tab>
+  <Tab title="Headless mode">
+    **What it is:** The driver sends the URScript code directly to the robot controller without going through the teach pendant. No URCap interaction is required after startup.
+
+    **When to use it:** Automated environments where no operator is present, CI pipelines, or when you want fully software-driven startup.
+
+    **How to activate it:** Pass `headless_mode:=true` when launching the driver:
+
+    ```bash
+    ros2 launch ur_robot_driver ur_control.launch.py \
+      ur_type:=ur5e \
+      robot_ip:=192.168.56.101 \
+      headless_mode:=true
+    ```
+
+    The driver starts sending commands immediately after launch — no pendant interaction is needed.
+
+    **Limitations:**
+    - The robot must be in **remote control mode** (e-Series and newer).
+    - If the program is interrupted (e.g. by a teach pendant interaction or protective stop), it must be restarted via:
+
+      ```bash
+      ros2 service call /io_and_status_controller/resend_robot_program std_srvs/srv/Trigger {}
+      ```
+
+    - When the program is stopped, the driver logs `Connection to reverse interface dropped.`
+
+    <Warning>
+      Headless mode requires the robot to be in remote control mode on e-Series and newer. Attempting to use headless mode without remote control mode will prevent the driver from sending commands.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Mode compatibility summary
+
+| | Local control mode | Remote control mode |
+|---|---|---|
+| **Teach Pendant mode** | Supported. Start/restart program from pendant. | Supported. Use dashboard services to load and start. |
+| **Headless mode** | Not supported on e-Series and newer. | Required for e-Series and newer. |
+
+<CardGroup cols={2}>
+  <Card title="Startup guide" icon="rocket" href="/usage/startup">
+    Step-by-step instructions for launching the driver.
+  </Card>
+  <Card title="Dashboard client" icon="terminal" href="/reference/dashboard-client">
+    Available dashboard commands and service calls.
+  </Card>
+</CardGroup>

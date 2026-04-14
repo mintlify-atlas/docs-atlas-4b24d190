@@ -1,0 +1,138 @@
+---
+title: "Extract UR Robot Calibration for Accurate TCP Poses"
+description: "Extract the factory kinematic calibration from your UR robot and pass it to the driver to eliminate centimeter-level end-effector position errors in ROS."
+---
+
+Every UR robot leaves the factory with an individual kinematic calibration that describes the exact Denavit–Hartenberg parameters for that specific unit. Without importing this calibration into your URDF, forward and inverse kinematics calculations will use nominal parameters, and your TCP pose can be off by centimeters compared to what the robot controller computes. The `ur_calibration` package extracts this data over the network and converts it into a YAML file that the driver reads at startup.
+
+## Why calibration matters
+
+The robot controller and the URDF model must agree on the mapping between joint angles and Cartesian poses. Universal Robots calibrates every arm individually on the production line, so the `d` parameters for joints 2 and 3 can deviate significantly from the nominal values. When you move to a Cartesian target planned in ROS, the path is computed using the URDF — if that model does not match the physical robot, the TCP arrives at the wrong place.
+
+<Note>
+  Skipping calibration is allowed, but end-effector positions can differ from the robot controller's display by several centimeters. For any application that relies on accurate Cartesian positioning, extract and apply the calibration.
+</Note>
+
+## How the correction algorithm works
+
+The raw calibration from the robot contains DH parameters that produce a kinematically equivalent chain, but the individual link frames end up displaced far from their physical location (the `d` offsets for joints 2 and 3 can be hundreds of meters in opposite directions). The `calibration_correction` node re-assembles these parameters into six transforms that represent a physically meaningful chain with `d` set to zero, adjusting `a` and `theta` to preserve the kinematic equivalence. The resulting YAML is what the driver loads.
+
+## Extracting the calibration
+
+The robot must be powered on and reachable over the network before running the extraction. You do not need to run an external-control program; the robot can be idle.
+
+<Steps>
+  <Step title="Launch the calibration extraction node">
+    Run the `calibration_correction` launch file, providing the robot's IP address and an absolute path for the output file:
+
+    ```bash
+    ros2 launch ur_calibration calibration_correction.launch.py \
+      robot_ip:=<robot_ip> \
+      target_filename:="${HOME}/my_robot_calibration.yaml"
+    ```
+
+    The node connects to the robot, reads the calibration, computes the correction, writes the YAML, and exits.
+  </Step>
+
+  <Step title="Verify the output file">
+    Open the generated file and confirm it contains a `kinematics` section with six `origin` transforms:
+
+    ```yaml
+    kinematics:
+      shoulder:
+        origin:
+          rpy: '[0, 0, 0]'
+          xyz: '[0, 0, 0.1807]'
+      upper_arm:
+        origin:
+          rpy: '[-1.5707963267948966, 0, 0]'
+          xyz: '[0, 0, 0]'
+      forearm:
+        # ...
+      wrist_1:
+        # ...
+      wrist_2:
+        # ...
+      wrist_3:
+        # ...
+    hash: <calibration_hash_string>
+    ```
+
+    The `hash` field is a fingerprint of the calibration. The driver compares this hash against the value reported by the robot at startup to detect mismatches.
+  </Step>
+</Steps>
+
+## Launch file arguments
+
+<AccordionGroup>
+  <Accordion title="calibration_correction.launch.py arguments">
+    | Argument | Required | Default | Description |
+    |---|---|---|---|
+    | `robot_ip` | Yes | — | IP address at which the ROS PC can reach the robot |
+    | `target_filename` | No | `robot_calibration.yaml` | Absolute path where the YAML output is written |
+  </Accordion>
+</AccordionGroup>
+
+## Passing the calibration file to the driver
+
+Once you have the YAML file, pass its path to `ur_control.launch.py` via the `kinematics_params_file` argument:
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py \
+  ur_type:=ur5e \
+  robot_ip:=192.168.56.101 \
+  kinematics_params_file:="${HOME}/my_robot_calibration.yaml"
+```
+
+Replace `ur5e` with the model that matches your robot.
+
+<Tip>
+  For production deployments, create a dedicated ROS package for your workcell and store the calibration YAML inside it. You can then resolve the path at launch time with `$(ros2 pkg prefix my_robot_cell_control)/share/my_robot_cell_control/config/my_robot_calibration.yaml`.
+</Tip>
+
+## Verifying the calibration hash at runtime
+
+When the driver starts, it reads the `hash` field from the YAML and compares it to the hash the robot reports over its RTDE interface. Watch the driver's console output for a line like:
+
+```
+[ur_robot_driver]: Calibration checksum: OK
+```
+
+If the hashes differ, you will see a warning:
+
+```
+[ur_robot_driver]: Calibration checksum mismatch. The robot's calibration does not match
+the calibration in the YAML file. Cartesian poses may be inaccurate.
+```
+
+A mismatch means the YAML was extracted from a different robot or the robot has been re-calibrated since the file was generated. Re-run the extraction to fix it.
+
+<Warning>
+  If you replace a robot with a different unit, always re-extract the calibration. Even robots of the same model have different factory calibration values.
+</Warning>
+
+## Storing calibration in a workcell package
+
+For repeatable setups, keep the calibration YAML under version control inside a colcon package. A typical structure looks like:
+
+```
+my_robot_cell_control/
+  config/
+    my_robot_calibration.yaml
+  launch/
+    start_robot.launch.py
+```
+
+In `start_robot.launch.py`, resolve the path using `get_package_share_directory`:
+
+```python
+from ament_index_python.packages import get_package_share_directory
+
+kinematics_params = os.path.join(
+    get_package_share_directory("my_robot_cell_control"),
+    "config",
+    "my_robot_calibration.yaml",
+)
+```
+
+Then pass `kinematics_params` as the `kinematics_params_file` argument when including `ur_control.launch.py`.

@@ -1,0 +1,100 @@
+---
+title: "Send Custom URScript Code to the UR Robot via ROS2"
+description: "Use the urscript_interface node to publish URScript snippets to the robot in remote control mode. Covers single-line, multi-line, and secondary programs."
+---
+
+The driver includes a `urscript_interface` node that accepts URScript code published to a ROS topic and forwards it directly to the robot controller. This lets you trigger one-off robot actions — popup messages, I/O operations, or custom motion sequences — without writing a full URScript program or modifying the driver's main control program. The node is started automatically by the driver's launch files, so no additional setup is needed.
+
+<Warning>
+  Publishing any script to the `urscript_interface` stops the currently running program on the robot, including the motion-interpreting program started by the driver. You must restart that program before you can send trajectory commands again (see below).
+</Warning>
+
+## Requirements
+
+- The robot must be in **remote control mode** (e-Series and newer). On CB-Series robots this restriction does not apply.
+- The driver must be running — the `urscript_interface` node is launched as part of the standard driver launch files.
+
+## Sending a simple command
+
+Publish a `std_msgs/msg/String` message to `/urscript_interface/script_command`. The data field contains the URScript code as a string:
+
+```bash
+# Show a popup on the teach pendant
+ros2 topic pub /urscript_interface/script_command std_msgs/msg/String \
+  '{data: popup("hello")}' --once
+```
+
+<Note>
+  There is no feedback on whether the script was syntactically correct. If invalid URScript is sent, the robot silently ignores it. Always validate your URScript before sending it.
+</Note>
+
+## Multi-line programs
+
+For scripts that span multiple lines, embed newlines directly in the message string. When publishing from the command line, use an empty line between statements so that the YAML parser preserves the newlines:
+
+```bash
+ros2 topic pub --once /urscript_interface/script_command std_msgs/msg/String '{data:
+"def my_prog():
+
+  set_digital_out(1, True)
+
+  movej(p[0.2, 0.3, 0.8, 0, 0, 3.14], a=1.2, v=0.25, r=0)
+
+  textmsg(\"motion finished\")
+
+end"}'
+```
+
+The driver prints the program as it sends it to the robot. Check the driver's console output to confirm that the newlines were interpreted correctly before the program runs.
+
+## Non-interrupting secondary programs
+
+Certain URScript commands can be sent as [secondary programs](https://www.universal-robots.com/articles/ur/programming/secondary-program/), which run alongside the main program without stopping it. Use the `sec` keyword instead of `def`:
+
+```bash
+ros2 topic pub --once /urscript_interface/script_command std_msgs/msg/String '{data:
+  "sec my_prog():
+
+    textmsg(\"This is a log message\")
+
+  end"}'
+```
+
+Secondary programs are suitable for operations like logging, setting I/O, or reading sensors. They cannot contain motion commands.
+
+## Restarting the driver program after interruption
+
+Sending any primary program via `urscript_interface` stops the External Control URCap program, which is what allows the driver to receive trajectory commands. You must restart it before normal motion control resumes.
+
+<Tabs>
+  <Tab title="Headless mode">
+    Call the `resend_program` service:
+
+    ```bash
+    ros2 service call /io_and_status_controller/resend_robot_program std_srvs/srv/Trigger
+    ```
+  </Tab>
+  <Tab title="External Control URCap (standard mode)">
+    Press the **Play** button on the teach pendant to restart the External Control program.
+  </Tab>
+</Tabs>
+
+## Limitations and safety considerations
+
+<AccordionGroup>
+  <Accordion title="No syntax validation">
+    The driver sends the script string to the robot without parsing it. Errors in the URScript code result in silent failures — the robot does not execute the program and does not report an error back to ROS. Test scripts on the teach pendant's script editor first.
+  </Accordion>
+
+  <Accordion title="Motion commands interrupt trajectory control">
+    Any URScript program containing motion commands (`movej`, `movel`, `speedj`, etc.) will take over robot motion from the driver. The `joint_trajectory_controller` and other motion controllers will not receive feedback or be able to send commands until the External Control program is restarted.
+  </Accordion>
+
+  <Accordion title="Remote control mode required on e-Series">
+    On e-Series robots (UR3e, UR5e, UR10e, UR16e, UR20, UR30), the robot must be in remote control mode for the `urscript_interface` to function. Switch to remote control mode using the teach pendant's top-right mode selector. In local control mode, published scripts are ignored.
+  </Accordion>
+
+  <Accordion title="Avoiding collisions with the main program">
+    If you only need to set I/O or log messages without interrupting motion, use a secondary program (`sec` keyword). For operations that require stopping the robot, call the appropriate services through the `io_and_status_controller` or `dashboard_client` instead of sending raw motion scripts.
+  </Accordion>
+</AccordionGroup>

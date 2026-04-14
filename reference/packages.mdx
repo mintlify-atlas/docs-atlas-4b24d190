@@ -1,0 +1,103 @@
+---
+title: "UR ROS2 Driver Repository: Package Reference Guide"
+description: "All packages in the Universal Robots ROS2 Driver repository — ur_robot_driver, ur_controllers, ur_calibration, ur_moveit_config, ur_dashboard_msgs, and ur."
+---
+
+The Universal Robots ROS2 Driver repository is organized as a set of ROS2 packages, each with a distinct responsibility. You can install all of them at once with the `ur` meta-package, or individually depending on your needs.
+
+```bash
+# Install all packages
+sudo apt-get install ros-$ROS_DISTRO-ur
+
+# Or install individual packages
+sudo apt-get install ros-$ROS_DISTRO-ur-robot-driver
+```
+
+## Package overview
+
+<CardGroup cols={2}>
+  <Card title="ur" icon="box">
+    Meta-package providing a single installation point for all packages in this repository. Installing `ur` pulls in every other package listed here as a dependency.
+
+    **Key dependencies:** all packages below
+  </Card>
+
+  <Card title="ur_robot_driver" icon="robot">
+    The main driver package. Contains the hardware interface plugin, launch files, URScript files, and RTDE recipe configurations. This is the package you launch to connect ROS2 to a real or simulated UR robot.
+
+    **Key dependencies:** `ur_client_library`, `ur_controllers`, `ur_dashboard_msgs`, `ur_description`, `ur_msgs`, `hardware_interface`, `controller_manager`
+
+    **Provided nodes and interfaces:**
+    - `dashboard_client` node
+    - `robot_state_helper` node
+    - `controller_stopper` node
+    - `urscript_interface` node
+    - `trajectory_until_node`
+    - `URPositionHardwareInterface` hardware plugin
+  </Card>
+
+  <Card title="ur_controllers" icon="sliders">
+    UR-specific controller implementations built on `ros2_controllers`. Provides controllers that go beyond the standard controller set to support UR-specific features such as speed scaling, passthrough trajectories, force mode, and freedrive.
+
+    **Key dependencies:** `controller_interface`, `hardware_interface`, `ur_dashboard_msgs`, `ur_msgs`, `joint_trajectory_controller`, `pluginlib`
+
+    **Provided controllers:**
+    - `SpeedScalingStateBroadcaster`
+    - `ScaledJointTrajectoryController` *(deprecated, to be removed in ROS Lyrical Luth)*
+    - `GPIOController` (io_and_status_controller)
+    - `PassthroughTrajectoryController`
+    - `ForceModeController`
+    - `FrictionModelController`
+    - `FreedriveModeController`
+    - `ToolContactController`
+    - `URConfigurationController`
+  </Card>
+
+  <Card title="ur_calibration" icon="ruler">
+    Tool for extracting the factory kinematic calibration from a real UR robot and converting it into a URDF-compatible format. Each robot is individually calibrated at the factory; using the correct calibration ensures accurate end-effector poses in ROS.
+
+    **Key dependencies:** `ur_client_library`, `ur_robot_driver`, `eigen`, `yaml_cpp_vendor`
+
+    **Provided nodes:**
+    - `calibration_correction` — connects to the robot, reads calibration, and writes a YAML file for use with `ur_description`
+  </Card>
+
+  <Card title="ur_dashboard_msgs" icon="messages-square">
+    ROS2 message and service interface definitions for communication with the UR Dashboard Server. Contains all custom message, service, and action types used by the dashboard client and robot state helper.
+
+    **Key dependencies:** `rosidl_default_generators`, `action_msgs`
+
+    **Provided types:**
+    - 8 message types (`RobotMode`, `SafetyMode`, `SafetyStatus`, `OperationalMode`, `ProgramState`, `ProgramInformation`, `UserRole`, `VersionInformation`)
+    - 28 service types
+    - 1 action type (`SetMode`)
+  </Card>
+
+  <Card title="ur_moveit_config" icon="route">
+    Example MoveIt2 configuration package for UR robots. Provides launch files to bring up a MoveIt2 `move_group` node configured for any UR model, along with SRDF, kinematics, and planning pipeline configurations.
+
+    **Key dependencies:** `moveit_ros_move_group`, `moveit_planners`, `moveit_kinematics`, `moveit_servo`, `ur_description`, `warehouse_ros_sqlite`
+
+    **Provided launch files:**
+    - `ur_moveit.launch.py` — starts the driver together with MoveIt2 and RViz2
+  </Card>
+</CardGroup>
+
+## Detailed package table
+
+| Package | Version | License | Main role |
+|---|---|---|---|
+| `ur` | 5.0.0 | BSD-3-Clause | Meta-package / installation convenience |
+| `ur_robot_driver` | 5.0.0 | BSD-3-Clause | Hardware interface, driver launch, helper nodes |
+| `ur_controllers` | 5.0.0 | BSD-3-Clause | UR-specific ros2_control controllers |
+| `ur_calibration` | 5.0.0 | BSD-3-Clause | Factory calibration extraction tool |
+| `ur_dashboard_msgs` | 5.0.0 | BSD-3-Clause | Dashboard message and service IDL definitions |
+| `ur_moveit_config` | 5.0.0 | Apache-2.0 | Example MoveIt2 configuration |
+
+## External dependencies
+
+The driver is built on top of the [Universal_Robots_Client_Library](https://github.com/UniversalRobots/Universal_Robots_Client_Library), which handles the low-level communication protocols (RTDE, Dashboard Server TCP, URScript transmission). The client library is a required dependency of both `ur_robot_driver` and `ur_calibration`.
+
+<Note>
+The driver requires Linux. There is currently no support for other operating systems, as the client library depends on Linux-specific real-time and networking features.
+</Note>

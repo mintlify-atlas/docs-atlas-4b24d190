@@ -1,0 +1,132 @@
+---
+title: "Configure Your UR Robot Before Starting the Driver"
+description: "Configure network settings, install the External Control URCap, set the remote PC IP, and extract robot calibration data before starting the UR ROS2 driver."
+---
+
+Before launching the driver, you need to prepare both the network connection and the robot itself. This page covers network setup, External Control URCap installation, and calibration extraction — each is required for the driver to communicate with the robot correctly.
+
+## Network setup
+
+Connect the ROS PC and the robot controller with a direct Ethernet cable where possible. Routing traffic through a network switch introduces latency that can disrupt the 500 Hz control loop.
+
+Assign a static IP address to both the ROS PC and the robot controller, then verify connectivity:
+
+```bash
+ping <robot_ip>
+```
+
+The robot's IP address is configured from the teach pendant under **Settings → System → Network**.
+
+<Note>
+  For detailed network configuration procedures specific to each robot generation, refer to the [Universal Robots Client Library network setup guide](https://docs.universal-robots.com/Universal_Robots_ROS2_Documentation/doc/ur_robot_driver/ur_robot_driver/doc/installation/robot_setup.html).
+</Note>
+
+## Install the External Control URCap
+
+The External Control URCap enables the robot to execute scripts sent by the ROS driver. It must be installed on the teach pendant before the driver can control the robot.
+
+<Tabs>
+  <Tab title="e-Series / PolyScope 5">
+
+<Steps>
+  <Step title="Download the URCap">
+    Download the latest `externalcontrol-*.urcap` file from the [ur_robot_driver releases page](https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver/releases).
+  </Step>
+  <Step title="Copy to USB drive">
+    Copy the `.urcap` file to a USB drive and insert it into the teach pendant.
+  </Step>
+  <Step title="Install via PolyScope">
+    On the teach pendant, go to **Settings → System → URCaps**, then press the **+** button and select the file from the USB drive.
+  </Step>
+  <Step title="Restart the robot">
+    Restart the robot controller when prompted. The URCap will appear in the **Installation** tab after restarting.
+  </Step>
+  <Step title="Set the remote PC IP address">
+    Navigate to **Installation → URCaps → External Control** and set the **Host IP** to the IP address of your ROS PC. Leave the **Host Name** and **Custom Port** at their defaults unless you have specific requirements.
+  </Step>
+</Steps>
+
+  </Tab>
+  <Tab title="PolyScope X">
+
+<Steps>
+  <Step title="Download the URCapX">
+    Download the latest `external-control-*.urcapx` file from the [ur_robot_driver releases page](https://github.com/UniversalRobots/Universal_Robots_ROS2_Driver/releases).
+  </Step>
+  <Step title="Install via PolyScope X">
+    In the PolyScope X web interface, navigate to **Settings → System → URCaps** and upload the `.urcapx` file directly through the browser.
+  </Step>
+  <Step title="Set the remote PC IP address">
+    Open the URCap configuration and set the **Host IP** to the IP address of your ROS PC.
+  </Step>
+</Steps>
+
+  </Tab>
+</Tabs>
+
+## Create an External Control program
+
+After installing the URCap, create a robot program that includes the **External Control** program node:
+
+<Steps>
+  <Step title="Open the program editor">
+    On the teach pendant, go to **Program → New** to create an empty program.
+  </Step>
+  <Step title="Insert the External Control node">
+    Add the **External Control** node from the URCaps section in the program tree.
+  </Step>
+  <Step title="Save the program">
+    Save the program with a recognizable name such as `ros_control.urp`. You will start this program each time you want to hand control to the ROS driver.
+  </Step>
+</Steps>
+
+<Warning>
+  The External Control program node must be the active node when the ROS driver is running. If any other program or motion command is sent to the robot, the External Control program will stop and the driver will report `Connection to reverse interface dropped.` You will need to restart the program from the teach pendant or via the dashboard service.
+</Warning>
+
+## Extract calibration information
+
+Each UR robot is individually calibrated at the factory. Loading this calibration into ROS ensures that end-effector (TCP) positions are accurate — without it, Cartesian poses can be off by centimetres.
+
+<Note>
+  The robot must be powered on (it can be idle) before running the calibration extraction script.
+</Note>
+
+Run the calibration extraction launch file, replacing `<robot_ip>` with your robot's IP address:
+
+```bash
+ros2 launch ur_calibration calibration_correction.launch.py \
+  robot_ip:=<robot_ip> target_filename:="${HOME}/my_robot_calibration.yaml"
+```
+
+The extracted calibration is saved to the path you specify in `target_filename`. Use an absolute path.
+
+When you start the driver later, pass this file via the `kinematics_params_file` argument:
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py \
+  ur_type:=ur5e \
+  robot_ip:=<robot_ip> \
+  kinematics_params_file:="${HOME}/my_robot_calibration.yaml"
+```
+
+The driver will log whether the loaded calibration matches the robot:
+
+```
+# Successful match
+[INFO] [URPositionHardwareInterface]: Calibration checksum: 'calib_xxxxxxxxxxxxxxxxxxx'
+[INFO] [URPositionHardwareInterface]: Calibration checked successfully.
+
+# Mismatch — re-extract and re-run
+[INFO] [URPositionHardwareInterface]: Calibration checksum: 'calib_xxxxxxxxxxxxxxxxxxx'
+[ERROR] [URPositionHardwareInterface]: The calibration parameters of the connected robot don't match the ones from the given kinematics config file.
+```
+
+<CardGroup cols={2}>
+  <Card title="Advanced calibration" icon="ruler-combined" href="/advanced/calibration">
+    More detail on how calibration works and how to verify it
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Launch the driver and send your first motion command
+  </Card>
+</CardGroup>

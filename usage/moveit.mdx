@@ -1,0 +1,157 @@
+---
+title: "Plan UR Robot Motion with MoveIt2 and ur_moveit_config"
+description: "Launch the ur_moveit_config package alongside the UR driver, plan trajectories in RViz, and send goals programmatically using the MoveIt2 Python or C++ API."
+---
+
+MoveIt2 support is built into the driver through the `ur_moveit_config` package, which provides an example MoveIt configuration for Universal Robots arms. The configuration covers the arm only — in a real-world deployment you should create a custom MoveIt config that also models the robot's surroundings (mounting surface, obstacles, etc.).
+
+## Prerequisites
+
+Before starting MoveIt, the driver must already be running against real hardware, URSim, or mock hardware. See the [startup guide](/usage/startup) or [simulation guide](/usage/simulation) for those steps.
+
+## Launching MoveIt2
+
+Start the MoveIt nodes (including the `move_group` node and an RViz instance with the MoveIt plugin) with:
+
+```bash
+ros2 launch ur_moveit_config ur_moveit.launch.py ur_type:=ur5e launch_rviz:=true
+```
+
+### Launch arguments
+
+| Argument | Default | Description |
+|---|---|---|
+| `ur_type` | *(required)* | Robot model, e.g. `ur5e`, `ur10e`. |
+| `launch_rviz` | `true` | Start RViz with the MoveIt plugin. |
+| `launch_servo` | `false` | Start the MoveIt Servo node for real-time Cartesian control. |
+| `use_sim_time` | `false` | Use simulation time (for Gazebo or other simulators). |
+| `warehouse_sqlite_path` | `~/.ros/warehouse_ros.sqlite` | Path for the MoveIt warehouse database. |
+| `publish_robot_description_semantic` | `true` | Publish the SRDF via the `move_group` node. |
+
+<Note>
+  The launch file waits for the robot description to be available before starting `move_group` and RViz. If the driver is not yet running, `ur_moveit.launch.py` will block until it becomes available.
+</Note>
+
+## Planning in RViz
+
+Once both the driver and MoveIt are running, use the **MotionPlanning** panel in RViz to plan and execute trajectories:
+
+<Steps>
+  <Step title="Set the goal state">
+    In the **MotionPlanning** panel, drag the interactive marker (the coloured sphere at the end-effector) to the desired pose, or use the **Goal State** dropdown to select a named configuration such as `home` or `up`.
+  </Step>
+  <Step title="Plan the trajectory">
+    Click **Plan** to compute a collision-free path. The planned trajectory is shown as a ghost of the robot in RViz.
+  </Step>
+  <Step title="Execute the trajectory">
+    Click **Execute** (or **Plan & Execute** to combine both steps) to send the trajectory to the controller. The robot will move along the planned path.
+  </Step>
+  <Step title="Set up a planning scene (optional)">
+    Use the **Scene Objects** tab in the MotionPlanning panel to add collision objects such as boxes and cylinders. MoveIt will avoid these objects during planning.
+  </Step>
+</Steps>
+
+## Trajectory Execution Monitoring
+
+<Note>
+  The provided MoveIt configuration disables **Trajectory Execution Monitoring** (TEM) by default. The Scaled Joint Trajectory Controller can slow trajectory execution below the planned velocity — a deliberate safety feature — but MoveIt's TEM is not aware of this and would unnecessarily abort goals.
+
+  The relevant setting in `moveit_controllers.yaml`:
+
+  ```yaml
+  trajectory_execution:
+    allowed_execution_duration_scaling: 1.2
+    allowed_goal_duration_margin: 0.5
+    allowed_start_tolerance: 0.01
+    execution_duration_monitoring: false # May lead to unexpectedly aborted goals with scaled JTC
+  ```
+
+  To temporarily re-enable TEM at runtime (for use with a non-scaling controller), update the `execution_duration_monitoring` parameter via the ROS 2 parameter service.
+</Note>
+
+## Sending goals programmatically
+
+For automated motion tasks, use the MoveIt2 Python or C++ API to send goals from your own node.
+
+<Tabs>
+  <Tab title="Python">
+    MoveIt2 provides a Python interface through `moveit_py`. A minimal example using the `MoveItPy` class:
+
+    ```python
+    import rclpy
+    from rclpy.node import Node
+    from moveit.planning import MoveItPy
+
+    rclpy.init()
+    node = rclpy.create_node("moveit_python_example")
+
+    moveit = MoveItPy(node_name="moveit_py")
+    arm = moveit.get_planning_component("ur_manipulator")
+
+    # Plan and execute to a named target
+    arm.set_start_state_to_current_state()
+    arm.set_goal_state(configuration_name="home")
+    plan_result = arm.plan()
+    if plan_result:
+        moveit.execute(plan_result.trajectory, controllers=[])
+    ```
+
+    See the [MoveIt2 Python API documentation](https://moveit.picknik.ai/main/doc/examples/motion_planning_python_api/motion_planning_python_api_tutorial.html) for the full reference.
+  </Tab>
+  <Tab title="C++">
+    Use the `moveit::planning_interface::MoveGroupInterface` to send goals from a C++ node:
+
+    ```cpp
+    #include <moveit/move_group_interface/move_group_interface.h>
+
+    int main(int argc, char** argv)
+    {
+      rclcpp::init(argc, argv);
+      auto node = rclcpp::Node::make_shared("moveit_cpp_example");
+
+      moveit::planning_interface::MoveGroupInterface move_group(node, "ur_manipulator");
+
+      // Set a named target and execute
+      move_group.setNamedTarget("home");
+      move_group.move();
+
+      rclcpp::shutdown();
+      return 0;
+    }
+    ```
+
+    See the [MoveIt2 C++ quickstart tutorial](https://moveit.picknik.ai/main/doc/tutorials/quickstart_in_rviz/quickstart_in_rviz_tutorial.html) for full usage examples.
+  </Tab>
+</Tabs>
+
+## Controller configuration
+
+The `ur_moveit_config` package configures two controllers for use with MoveIt. The `scaled_joint_trajectory_controller` is set as the default:
+
+```yaml
+moveit_simple_controller_manager:
+  controller_names:
+    - scaled_joint_trajectory_controller
+    - joint_trajectory_controller
+
+  scaled_joint_trajectory_controller:
+    action_ns: follow_joint_trajectory
+    type: FollowJointTrajectory
+    default: true
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+```
+
+<CardGroup cols={2}>
+  <Card title="Controllers overview" icon="sliders" href="/controllers/overview">
+    Learn about all available controllers and when to use each.
+  </Card>
+  <Card title="Simulation" icon="flask" href="/usage/simulation">
+    Test MoveIt integration with URSim or mock hardware.
+  </Card>
+</CardGroup>

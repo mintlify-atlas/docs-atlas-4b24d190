@@ -1,0 +1,113 @@
+---
+title: "Upgrade the UR ROS2 Driver: Iron to Jazzy Migration"
+description: "Breaking changes when upgrading from ROS2 Iron to Jazzy: parameter renames, xacro tag relocation, robot_description distribution, and control node changes."
+---
+
+The Jazzy release of the `ur_robot_driver` introduces several breaking changes compared to Iron. Most changes affect how launch files are structured, how the robot description is distributed, and how the ros2_control node is started. This guide covers each change and explains what you need to update.
+
+## `keep_alive_count` replaced by `robot_receive_timeout`
+
+The `keep_alive_count` hardware interface parameter has been removed. It previously expressed the communication timeout as a multiple of 20 ms cycles. The replacement parameter, `robot_receive_timeout`, specifies the timeout directly in seconds as a floating-point value.
+
+If you previously passed `keep_alive_count` in a hardware interface configuration or a custom xacro, update it to `robot_receive_timeout`:
+
+<CodeGroup>
+
+```yaml Iron (old)
+hardware:
+  parameters:
+    keep_alive_count: 3
+```
+
+```yaml Jazzy (new)
+hardware:
+  parameters:
+    robot_receive_timeout: 0.06
+```
+
+</CodeGroup>
+
+The equivalent timeout in seconds is `keep_alive_count × 0.02`. For example, a `keep_alive_count` of 3 corresponds to a `robot_receive_timeout` of `0.06` seconds.
+
+## `ros2_control` xacro tag moved to the driver package
+
+In Iron the `ur_description` package added the `ros2_control` tag to the robot URDF. In Jazzy this responsibility has moved to `ur_robot_driver`, which now provides:
+
+- A `urdf/` folder with a macro that generates the `ros2_control` tag.
+- A ready-to-use xacro file for a UR robot with the `ros2_control` tag already included.
+
+If you maintain a custom workcell URDF that included the `ros2_control` tag from `ur_description`, update it to include the equivalent macro from `ur_robot_driver` instead. Use the [custom workcell tutorial](https://github.com/UniversalRobots/Universal_Robots_ROS2_Tutorials/blob/main/my_robot_cell/my_robot_cell_control/urdf/my_robot_cell_controlled.urdf.xacro) as a reference for the updated structure.
+
+## `robot_description` distributed via `robot_state_publisher`
+
+In Iron the `robot_description` was propagated to all nodes as a parameter. In Jazzy only the `robot_state_publisher` receives the parameter directly; other nodes consume it from the `robot_description` topic.
+
+A new launch file, `ur_rsp.launch.py`, handles loading the description and starting the `robot_state_publisher`. If your workcell requires a custom description, write your own RSP launch file and pass it as the `description_launchfile` argument to `ur_control.launch.py`:
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py \
+  ur_type:=ur5e \
+  robot_ip:=192.168.56.101 \
+  description_launchfile:=/path/to/my_robot_cell_rsp.launch.py
+```
+
+## Absolute paths required in launch files
+
+All launch file arguments that accept file paths (description files, controller configuration files, calibration files) now require **absolute paths**. In Iron some arguments accepted a `description_package` + relative `description_file` pair; that combination is no longer supported.
+
+You can still construct absolute paths dynamically using `ros2 pkg prefix`:
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py \
+  ur_type:=ur20 \
+  robot_ip:=192.168.56.101 \
+  kinematics_params_file:=$(ros2 pkg prefix my_robot_cell_control)/share/my_robot_cell_control/config/my_robot_calibration.yaml
+```
+
+Inside a Python launch file, use `get_package_share_directory`:
+
+```python
+from ament_index_python.packages import get_package_share_directory
+
+kinematics_params = os.path.join(
+    get_package_share_directory("my_robot_cell_control"),
+    "config",
+    "my_robot_calibration.yaml",
+)
+```
+
+## `ros2_control_node` removed from `ur_robot_driver`
+
+The `ur_ros2_control_node` executable has been removed from `ur_robot_driver`. The `ur_control.launch.py` launch file now uses the `ros2_control_node` executable from the `controller_manager` package directly.
+
+This change only affects you if you wrote a custom launch file that started `ur_robot_driver`'s `ur_ros2_control_node`. Update the node definition as follows:
+
+```diff
+ ur_control_node = Node(
+-    package="ur_robot_driver",
+-    executable="ur_ros2_control_node",
++    package="controller_manager",
++    executable="ros2_control_node",
+     parameters=[
+-        robot_description,
+         update_rate_config_file,
+         ParameterFile(initial_joint_controllers, allow_substs=True),
+     ],
+```
+
+Note that `robot_description` is also removed from the parameter list — this is consistent with the change described in the [robot_description section](#robot_description-distributed-via-robot_state_publisher) above.
+
+<Warning>
+  Passing `robot_description` as a parameter to `ros2_control_node` in Jazzy will not work as expected. Remove it from the parameters list and rely on the `robot_state_publisher` topic instead.
+</Warning>
+
+## Summary of changes
+
+| Area | Iron | Jazzy |
+|---|---|---|
+| Communication timeout | `keep_alive_count` (multiples of 20 ms) | `robot_receive_timeout` (seconds) |
+| `ros2_control` xacro | In `ur_description` | In `ur_robot_driver` |
+| `robot_description` distribution | Parameter on all nodes | Topic from `robot_state_publisher` |
+| RSP launch file | Inline in `ur_control.launch.py` | Separate `ur_rsp.launch.py`, customizable via `description_launchfile` |
+| Launch file paths | Package + relative path accepted | Absolute paths required |
+| Control node | `ur_robot_driver/ur_ros2_control_node` | `controller_manager/ros2_control_node` |

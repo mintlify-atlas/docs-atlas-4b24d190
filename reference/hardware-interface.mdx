@@ -1,0 +1,123 @@
+---
+title: "UR Hardware Interface: ros2_control Integration Guide"
+description: "Complete reference for the UR ros2_control hardware interface — supported control modes, exposed command and state interfaces, and controller claiming rules."
+---
+
+The UR hardware interface is the core piece of the ROS2 driver. It is responsible for communicating with the robot controller, sending commands and receiving status updates. Implemented using the `ros2_control` framework, it provides a modular and flexible foundation for robot control that any standard or custom controller can build on.
+
+<Note>
+The hardware interface itself does not define how the robot's motion is controlled through ROS. For that, a **controller** is needed — such as the `JointTrajectoryController` or the `ForceModeController`. See [controllers overview](/controllers/overview) for details on available controllers.
+</Note>
+
+## Supported control modes
+
+The UR hardware interface exposes interfaces for all of the following control modes. Controllers claim these interfaces at activation time and release them on deactivation.
+
+<AccordionGroup>
+  <Accordion title="Position control">
+    The robot's joints are controlled by specifying target positions. This is the most common mode used with the `JointTrajectoryController` and the `ScaledJointTrajectoryController`. The `servoj_gain` and `servoj_lookahead_time` hardware parameters tune the underlying `servoj` URScript command used for this mode.
+  </Accordion>
+
+  <Accordion title="Velocity control">
+    The robot's joints are controlled by specifying target velocities. Velocity-based joint control is implemented in the driver; however, the velocity-based joint trajectory controller may require per-model gain tuning.
+  </Accordion>
+
+  <Accordion title="Effort control (torque control)">
+    The robot's joints are controlled by specifying target efforts (torques). This enables direct torque control of the manipulator.
+
+    <Note>Effort control is only available when running PolyScope >= 5.23.0 or >= 10.10.0.</Note>
+  </Accordion>
+
+  <Accordion title="Force control">
+    The robot's end-effector is controlled by specifying target forces in Cartesian space. This mode is activated via the `ForceModeController` and interfaces the URScript `force_mode()` function directly. See [force-torque controllers](/controllers/force-torque) for usage details.
+  </Accordion>
+
+  <Accordion title="Freedrive mode">
+    The robot can be moved freely by the user without any active control. Activated via the `FreedriveModeController` — this mode cannot be combined with any other motion controller.
+  </Accordion>
+
+  <Accordion title="Passthrough trajectory control">
+    Complete trajectory points are forwarded to the robot controller for interpolation and execution on the robot itself. This greatly reduces the real-time requirements on the control PC. Activated via the `PassthroughTrajectoryController`.
+  </Accordion>
+
+  <Accordion title="Tool contact mode">
+    The robot stops when the tool comes into contact with an object, allowing for safe interaction with the environment. Activated via the `ToolContactController`. The direction of tool contact is always the current TCP direction of movement.
+  </Accordion>
+
+  <Accordion title="Speed scaling">
+    The current execution speed as reported by the robot can be read through the hardware interface. This value (a float between 0 and 1) is the product of the speed slider position and the target speed fraction from RTDE. Controllers such as the `ScaledJointTrajectoryController` use this to align trajectory progress with actual robot execution.
+  </Accordion>
+
+  <Accordion title="GPIO">
+    Digital and analog I/O pins can be read and written through the hardware interface via the `io_and_status_controller`. This allows setting output pins and reading input states from ROS topics and services.
+  </Accordion>
+
+  <Accordion title="Payload">
+    The payload configuration (mass, center of gravity) can be changed during runtime through the `~/set_payload` service provided by the `io_and_status_controller`. This updates the robot's internal dynamics model without requiring a restart.
+  </Accordion>
+
+  <Accordion title="Force torque sensor">
+    Force torque sensor data can be read through the hardware interface and is published by the `force_torque_sensor_broadcaster`. Zeroing the sensor is also supported via the `~/zero_ftsensor` service.
+  </Accordion>
+</AccordionGroup>
+
+## Interacting with the hardware interface
+
+Motion control is done through controllers loaded on top of the hardware interface. The `ros2_control` framework provides CLI tools to inspect the hardware interface and its available interfaces directly.
+
+### Listing hardware components
+
+```bash
+ros2 control list_hardware_components
+```
+
+This command lists all hardware components registered with the controller manager, including the UR hardware interface and all of its command and state interfaces.
+
+### Listing available interfaces
+
+```bash
+ros2 control list_hardware_interfaces
+```
+
+This shows each interface name, its type (command or state), and whether it is currently claimed by a controller.
+
+### Loading and activating controllers
+
+When the launch files from this driver are used, a predefined set of controllers is already loaded and configured. See [controllers overview](/controllers/overview) for the complete list grouped by control mode.
+
+You can also load additional controllers that claim the interfaces provided by the hardware interface:
+
+```bash
+ros2 control load_controller --set-state active my_controller
+```
+
+## Hardware interface types
+
+The UR hardware interface exposes the following interface categories. Each joint exposes position, velocity, and effort interfaces. Additional GPIO, sensor, and specialty interfaces are exposed as named resources.
+
+| Interface category | Interface names | Direction |
+|---|---|---|
+| Joint position | `<joint_name>/position` (×6) | Command + State |
+| Joint velocity | `<joint_name>/velocity` (×6) | Command + State |
+| Joint effort | `<joint_name>/effort` (×6) | Command + State |
+| Speed scaling | `speed_scaling/speed_scaling_factor` | State |
+| Force/torque | `tcp_fts_sensor/force.{x,y,z}`, `tcp_fts_sensor/torque.{x,y,z}` | State |
+| GPIO (digital out) | `gpio/standard_digital_output_cmd_*` | Command |
+| GPIO (digital in) | `gpio/digital_output_*`, `gpio/digital_input_*` | State |
+| GPIO (analog out) | `gpio/standard_analog_output_cmd_*` | Command |
+| GPIO (analog in) | `gpio/analog_input_*` | State |
+| Payload | `payload/mass`, `payload/cog.{x,y,z}` | Command |
+| Passthrough trajectory | `trajectory_passthrough/setpoint_positions_*` etc. | Command |
+| Freedrive | `freedrive_mode/async_success` | Command |
+| Force mode | `force_mode/task_frame_*` etc. | Command |
+| Tool contact | `tool_contact/async_success` | Command |
+
+## How controllers claim interfaces
+
+When a controller is activated, it requests the interfaces it needs from the resource manager. The resource manager checks whether each requested interface exists and is not already claimed by another active controller. If all interfaces are available, the controller transitions to `active` state and gains exclusive write access to any command interfaces it holds.
+
+<Warning>
+Passthrough trajectory command interfaces and streaming command interfaces (position/velocity/effort) cannot be activated in parallel. The hardware component enforces this constraint — attempting to activate both will fail.
+</Warning>
+
+When a controller is deactivated (for example, when the robot program stops and the `controller_stopper` node intervenes), its interfaces are released and become available for other controllers to claim. See [startup and operation](/usage/startup) for details on the controller lifecycle during normal driver operation.

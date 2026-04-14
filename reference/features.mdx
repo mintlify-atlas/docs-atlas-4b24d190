@@ -1,0 +1,44 @@
+---
+title: "UR ROS2 Driver: Complete Feature Matrix and Status"
+description: "Complete feature matrix of supported capabilities in the UR ROS2 Driver — trajectory control, force mode, freedrive, tool contact, calibration, and more."
+---
+
+The Universal Robots ROS2 Driver supports all robot models across the UR product family — from 3 kg to 30 kg payload — on PolyScope X, PolyScope 5, and CB3 controllers. The table below shows the current support status for each feature and links to the relevant documentation where applicable.
+
+<Note>
+Velocity-based joint control is implemented in the driver, but the velocity-based joint trajectory controller may require per-model gain tuning to achieve good tracking performance.
+</Note>
+
+## Feature matrix
+
+| Feature | Supported | Notes / Reference |
+|---|---|---|
+| Joint position-based control | Yes | Standard `JointTrajectoryController` or [Scaled JTC](/controllers/position-velocity) |
+| Scaled joint position-based control | Yes | [Scaled Joint Trajectory Controller](/controllers/position-velocity) |
+| Joint velocity-based control | Yes¹ | See note below |
+| Joint effort-based control (torque control) | Yes | [Force and Torque Controllers](/controllers/force-torque) — requires PolyScope >= 5.23.0 / 10.10.0 |
+| Cartesian position-based control | No | Not currently implemented |
+| Cartesian twist-based control | No | Not currently implemented |
+| Trajectory forwarding for execution on robot | Yes | [Passthrough Trajectory Controller](/controllers/position-velocity) |
+| Reporting of TCP wrench | Yes | `force_torque_sensor_broadcaster` — see [ROS topics reference](/reference/ros-topics-services) |
+| Pausing of programs | Yes | Via teach pendant speed slider or dashboard client |
+| Continue trajectories after EM-Stop resume | Yes | Speed scaling integration in trajectory controllers |
+| Continue trajectories after protective stop | Yes | Speed scaling integration in trajectory controllers |
+| Teach pendant interaction between motions | Yes | Panel interaction remains available during external control |
+| Get and set I/O states | Yes | [io_and_status_controller](/reference/ros-topics-services) |
+| Tool communication forwarder on e-Series | Yes | [Tool communication setup](/advanced/tool-communication) |
+| Use the driver without a teach pendant | Yes | [Headless mode](/usage/operation-modes) |
+| Support for CB1 and CB2 robots | No | CB3, PolyScope 5, and PolyScope X are supported |
+| Trajectory extrapolation on robot for missing packets | Yes | Implemented in the URScript running on the robot |
+| Use ROS as drop-in for teach pendant programs | Yes | External Control URCap integration |
+| Headless mode | Yes | [Operation modes](/usage/operation-modes) |
+| Extract calibration from robot | Yes | [Calibration](/advanced/calibration) and `ur_calibration` package |
+| Send custom script commands to robot | Yes | Via `io_and_status_controller` — see [script code](/advanced/script-code) |
+| Reconnect on disconnected robot | Yes | Automatic reconnection handled by the client library |
+| Freedrive mode | Yes | [FreedriveModeController](/controllers/force-torque) |
+| Tool contact mode | Yes | [ToolContactController](/controllers/force-torque) |
+| Force mode | Yes | [ForceModeController](/controllers/force-torque) |
+
+---
+
+¹ Velocity-based joint control is implemented in the driver. The velocity-based joint trajectory controller may require tuning of gain parameters for each robot model to achieve stable tracking.

@@ -1,0 +1,160 @@
+---
+title: "Real-time Linux Kernel Setup for the UR ROS2 Driver"
+description: "Install a low-latency or PREEMPT_RT kernel and configure your network connection to meet the 500 Hz cycle-time requirements of the UR ROS2 robot driver."
+---
+
+The `ur_robot_driver` communicates with the robot controller over a 500 Hz control loop. Each cycle, the driver reads robot state via RTDE, runs the ros2_control update, and sends the next command — all within a 2 ms window. On a standard Linux kernel, scheduler latency can cause missed cycles that the robot interprets as a communication fault, resulting in protective stops. A low-latency or real-time kernel dramatically reduces this jitter and produces a stable, reliable connection.
+
+<Note>
+  The `passthrough_trajectory_controller` and `motion_primitive_forward_controller` offload trajectory execution to the robot controller, which significantly reduces the real-time requirements on the ROS PC. If you cannot install a real-time kernel, consider using one of these controllers for trajectory-based motion. For streaming controllers (`forward_position_controller`, `forward_velocity_controller`) a real-time kernel is strongly recommended.
+</Note>
+
+## Verify your current kernel
+
+Check the running kernel before making any changes:
+
+```bash
+uname -a
+```
+
+The output includes the kernel version and any patch tags. A `PREEMPT_RT` kernel will show `PREEMPT_RT` in this string. A standard Ubuntu lowlatency kernel will show `lowlatency`.
+
+## Option 1: Ubuntu lowlatency kernel
+
+The Ubuntu lowlatency kernel reduces scheduler latency without requiring a custom build. It is the quickest path to improved real-time performance.
+
+<Steps>
+  <Step title="Install the lowlatency kernel">
+    ```bash
+    sudo apt-get update
+    sudo apt-get install linux-lowlatency
+    ```
+  </Step>
+
+  <Step title="Reboot into the new kernel">
+    ```bash
+    sudo reboot
+    ```
+  </Step>
+
+  <Step title="Verify the kernel loaded">
+    ```bash
+    uname -a
+    ```
+
+    The output should include `lowlatency`.
+  </Step>
+</Steps>
+
+## Option 2: PREEMPT_RT patched kernel
+
+A `PREEMPT_RT`-patched kernel provides the lowest achievable latency for real-time workloads. Ubuntu ships pre-built real-time kernels for LTS releases.
+
+<Steps>
+  <Step title="Install the real-time kernel">
+    On Ubuntu 22.04 (Jammy) and later, a pre-built RT kernel is available:
+
+    ```bash
+    sudo apt-get update
+    sudo apt-get install linux-realtime
+    ```
+
+    On other distributions you may need to build the kernel from source by applying the PREEMPT_RT patch set to the matching upstream kernel version.
+  </Step>
+
+  <Step title="Reboot into the RT kernel">
+    ```bash
+    sudo reboot
+    ```
+  </Step>
+
+  <Step title="Confirm the RT kernel is active">
+    ```bash
+    uname -a
+    ```
+
+    Look for `PREEMPT_RT` in the output. For example:
+
+    ```
+    Linux hostname 5.15.0-1034-realtime #38-Ubuntu SMP PREEMPT_RT ...
+    ```
+  </Step>
+
+  <Step title="Grant real-time scheduling privileges to your user">
+    Add your user to the `realtime` group (created by the `linux-realtime` package) so that ROS processes can use FIFO scheduling:
+
+    ```bash
+    sudo usermod -aG realtime $USER
+    ```
+
+    Log out and back in for the group change to take effect.
+  </Step>
+</Steps>
+
+## Network configuration for low latency
+
+The driver requires a stable, low-latency network connection to the robot. Wireless networks and switches introduce variable latency that can cause missed cycles even with a real-time kernel.
+
+<Steps>
+  <Step title="Use a direct Ethernet connection">
+    Connect the ROS PC directly to the robot controller's network port with a dedicated Ethernet cable. Avoid routing traffic through switches, routers, or Wi-Fi access points on the control path.
+  </Step>
+
+  <Step title="Disable network interface power management">
+    Many network interface cards enter low-power states that add latency to packet reception. Disable this for the interface connected to the robot:
+
+    ```bash
+    sudo ethtool -s <interface_name> wol d
+    ```
+
+    To make this persistent across reboots, add it to a `@reboot` cron job or a systemd service.
+  </Step>
+
+  <Step title="Set a static IP address">
+    Configure a static IP on the interface facing the robot to avoid DHCP renewal delays during operation.
+  </Step>
+</Steps>
+
+## Checking RT priorities of ROS 2 processes
+
+On a `PREEMPT_RT` kernel, the `controller_manager` and hardware interface threads should run with real-time FIFO scheduling. The ros2_control stack sets these priorities automatically when the `realtime` group is configured correctly.
+
+Verify the scheduling policy of the running driver processes:
+
+```bash
+ps -eLo pid,tid,cls,rtprio,comm | grep -E "ros2_control|ur_ros2"
+```
+
+Threads with `FF` in the `CLS` column are using FIFO real-time scheduling. The `RTPRIO` column shows the priority (higher numbers have higher priority).
+
+## Validating latency with cyclictest
+
+`cyclictest` from the `rt-tests` package measures scheduler latency directly and helps confirm that your kernel and system configuration meet the driver's requirements:
+
+```bash
+sudo apt-get install rt-tests
+sudo cyclictest --mlockall --smp --priority=98 --interval=200 --distance=0 --duration=1m
+```
+
+For a healthy real-time system, maximum latency values should stay below 200 µs. Consistently high maximum values indicate a latency source that needs investigation (SMI interrupts, power management, or a non-RT kernel).
+
+<Warning>
+  Run `cyclictest` under realistic system load (with the driver running and actively communicating with the robot) to get representative results. Idle-system measurements can be misleadingly good.
+</Warning>
+
+## Summary
+
+<CardGroup cols={2}>
+  <Card title="Lowlatency kernel" icon="gauge">
+    Fastest to install. Suitable for trajectory-based control. Install with `apt-get install linux-lowlatency`.
+  </Card>
+  <Card title="PREEMPT_RT kernel" icon="bolt">
+    Best for streaming control and lowest possible jitter. Install with `apt-get install linux-realtime` on Ubuntu, then add your user to the `realtime` group.
+  </Card>
+  <Card title="Direct network connection" icon="network-wired">
+    Use a dedicated Ethernet cable between the ROS PC and the robot controller. Avoid switches on the control path.
+  </Card>
+  <Card title="Passthrough controller" icon="arrow-right-arrow-left">
+    If a real-time kernel is not available, use `passthrough_trajectory_controller` to offload execution to the robot and reduce PC timing requirements.
+  </Card>
+</CardGroup>

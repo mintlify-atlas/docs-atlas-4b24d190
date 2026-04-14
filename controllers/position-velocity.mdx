@@ -1,0 +1,303 @@
+---
+title: "Position and Velocity Motion Controllers for UR Robots"
+description: "Reference for all UR ROS2 position and velocity controllers: scaled JTC, passthrough trajectory, forward position, forward velocity, and motion primitives."
+---
+
+Position and velocity control are the most common ways to command a UR robot via ROS 2. The driver provides controllers spanning three approaches: trajectory-based control (where a planner generates waypoints and the controller interpolates them), passthrough control (where the complete trajectory is forwarded to the robot controller), and streaming control (where you send individual joint commands in real time). Choose based on your real-time requirements and the type of motion you need.
+
+<Note>
+For Cartesian force-constrained motion or freedrive mode, see [Force and torque controllers](/controllers/force-torque).
+</Note>
+
+## Trajectory-based control
+
+Trajectory-based controllers accept goals via the `FollowJointTrajectory` action interface, which is the standard interface used by MoveIt and other planners. The controller interpolates between waypoints and sends commands to the robot at the control loop rate.
+
+### `joint_trajectory_controller`
+
+**Type:** `joint_trajectory_controller/JointTrajectoryController`
+
+The `joint_trajectory_controller` is the primary trajectory controller in the driver. It interpolates trajectories on the ROS control PC and streams the resulting joint position commands to the robot.
+
+Key behavior: the controller reads the robot's `speed_scaling` state interface and uses it to scale trajectory progress. If the speed slider on the teach pendant is reduced, or if the robot triggers a protective stop or E-stop, trajectory execution slows down proportionally rather than diverging from the planned path.
+
+**Combinations:**
+- Works with MoveIt and any `FollowJointTrajectory`-compatible planner.
+- Can run alongside `force_mode_controller` for force-constrained motion.
+- Can run alongside `tool_contact_controller` to stop on contact.
+- Mutually exclusive with all other motion controllers.
+
+To activate:
+
+```bash
+ros2 control switch_controllers \
+  --deactivate scaled_joint_trajectory_controller \
+  --activate joint_trajectory_controller
+```
+
+<Accordion title="Configuration in ur_controllers.yaml">
+
+```yaml
+joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 100.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: false
+    constraints:
+      stopped_velocity_tolerance: 0.2
+      goal_time: 0.0
+      shoulder_pan_joint: {trajectory: 0.2, goal: 0.1}
+      shoulder_lift_joint: {trajectory: 0.2, goal: 0.1}
+      elbow_joint:         {trajectory: 0.2, goal: 0.1}
+      wrist_1_joint:       {trajectory: 0.2, goal: 0.1}
+      wrist_2_joint:       {trajectory: 0.2, goal: 0.1}
+      wrist_3_joint:       {trajectory: 0.2, goal: 0.1}
+    speed_scaling:
+      state_interface: speed_scaling/speed_scaling_factor
+```
+
+</Accordion>
+
+### `scaled_joint_trajectory_controller` (default)
+
+**Type:** `ur_controllers/ScaledJointTrajectoryController`
+
+`scaled_joint_trajectory_controller` is the default motion controller activated at startup. It is functionally similar to `joint_trajectory_controller` and supports the same `FollowJointTrajectory` action interface, speed scaling, force mode, and tool contact controller combinations.
+
+<Warning>
+`ScaledJointTrajectoryController` is deprecated. The upstream `joint_trajectory_controller` now supports the same speed-scaling feature. New deployments should prefer `joint_trajectory_controller`.
+</Warning>
+
+The problem it solved: without speed scaling awareness, a standard trajectory controller interpolates using the configured time constraints regardless of actual robot execution speed. If the speed slider is set to 50%, the robot executes at half speed but the controller continues advancing through the trajectory at full speed, resulting in large path deviations. The scaled controller advances trajectory time only by the fraction reported by the robot's speed scaling factor, keeping path error minimal.
+
+<Accordion title="Configuration in ur_controllers.yaml">
+
+```yaml
+scaled_joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    state_publish_rate: 100.0
+    action_monitor_rate: 20.0
+    allow_partial_joints_goal: false
+    constraints:
+      stopped_velocity_tolerance: 0.2
+      goal_time: 0.0
+      shoulder_pan_joint: {trajectory: 0.2, goal: 0.1}
+      shoulder_lift_joint: {trajectory: 0.2, goal: 0.1}
+      elbow_joint:         {trajectory: 0.2, goal: 0.1}
+      wrist_1_joint:       {trajectory: 0.2, goal: 0.1}
+      wrist_2_joint:       {trajectory: 0.2, goal: 0.1}
+      wrist_3_joint:       {trajectory: 0.2, goal: 0.1}
+    speed_scaling_interface_name: speed_scaling/speed_scaling_factor
+```
+
+</Accordion>
+
+## Passthrough trajectory controller
+
+### `passthrough_trajectory_controller`
+
+**Type:** `ur_controllers/PassthroughTrajectoryController`
+
+Instead of interpolating trajectories on the ROS PC, the passthrough controller forwards the complete trajectory to the robot controller. The robot then executes it using its own internal interpolation, which defaults to mimicking ros2_control's spline interpolation. This eliminates the need for a real-time patched kernel on the ROS PC because the robot always has the full plan and can continue executing even if a control cycle is missed.
+
+The controller uses the same `FollowJointTrajectory` action interface as `joint_trajectory_controller`, so it is a drop-in replacement for MoveIt and other planners.
+
+**Key behavior:**
+- Forwards all waypoints to the robot controller one by one, then waits for execution to complete.
+- Tracks scaled time during execution monitoring, so it correctly handles speed slider changes and protective stops without false timeouts.
+- Goal time tolerance of `0.0` disables timeout checking.
+- Does not support replacing a running trajectory — cancel the current action before sending a new one.
+
+**Limitations:**
+- Only works with URSim or a real UR robot. Mock hardware and Gazebo do not support the passthrough command interfaces.
+
+**Combinations:**
+- Can run alongside `force_mode_controller` and `tool_contact_controller`.
+- Mutually exclusive with all other motion controllers.
+
+To activate:
+
+```bash
+ros2 control switch_controllers \
+  --deactivate scaled_joint_trajectory_controller \
+  --activate passthrough_trajectory_controller
+```
+
+<Accordion title="Configuration and parameters">
+
+```yaml
+passthrough_trajectory_controller:
+  ros__parameters:
+    tf_prefix: ""
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    state_interfaces:
+      - position
+      - velocity
+    speed_scaling_interface_name: speed_scaling/speed_scaling_factor
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `joints` | string[] | — | Joint names to control (required) |
+| `state_interfaces` | string[] | — | State interfaces to read; subset of `position`, `velocity`, `acceleration` (required) |
+| `speed_scaling_interface_name` | string | `speed_scaling/speed_scaling_factor` | Fully qualified name of the speed scaling interface |
+| `tf_prefix` | string | `""` | URDF prefix of the corresponding arm |
+
+</Accordion>
+
+## Motion primitives
+
+### `motion_primitive_forward_controller`
+
+**Type:** `motion_primitives_controllers/MotionPrimitivesForwardController`
+
+This controller sends complete motion descriptions (motion primitives) to the robot controller, which executes them using its built-in motion planner. Because the robot handles all interpolation, the ROS PC has no real-time requirements during execution. Sequences of primitives can be blended using blend radii for smooth, continuous motion.
+
+The controller accepts goals via `~/motion_sequence [control_msgs/action/ExecuteMotionPrimitiveSequence]`.
+
+**Supported motion types:**
+
+| Type | URScript equivalent | Description |
+|---|---|---|
+| `LINEAR_JOINT` | `moveJ` | Joint-space point-to-point move to target joint positions |
+| `LINEAR_CARTESIAN` | `moveL` | Cartesian-space linear move to a target TCP pose |
+| `CIRCULAR_CARTESIAN` | `moveC` | Circular move through a via-point to a target pose |
+
+**Combinations:**
+- Can run alongside `force_mode_controller` and `tool_contact_controller`.
+- Mutually exclusive with all other motion controllers.
+
+To activate:
+
+```bash
+ros2 control switch_controllers \
+  --deactivate scaled_joint_trajectory_controller \
+  --activate motion_primitive_forward_controller
+```
+
+An example is available at `ur_robot_driver/examples/send_dummy_motion_primitives_ur10e.py`.
+
+## Streaming control
+
+Streaming controllers let you send individual joint commands directly at the control loop rate, without trajectory planning. They are suited for real-time servoing (e.g. `moveit_servo`), teleoperation, and custom reactive control loops.
+
+<Warning>
+With streaming controllers, you are responsible for sending commands that are safe and physically achievable. The robot will attempt to follow each command as fast as possible without trajectory planning or collision checking.
+</Warning>
+
+<Note>
+The robot may still scale down execution speed due to safety limits. Unlike trajectory controllers, streaming controllers do not automatically account for speed scaling. Monitor the [`speed_scaling_state_broadcaster`](/controllers/utility-controllers#speed-scaling-state-broadcaster) topic and adapt your commands when the robot is scaling down.
+</Note>
+
+### `forward_position_controller`
+
+**Type:** `forward_command_controller/ForwardCommandController` with `interface_name: position`
+
+Streams target joint positions directly to the robot. Each command is sent to the robot via the URScript `servoj(...)` function, which moves all joints to the commanded position as quickly as possible. The controller subscribes to `~/commands [std_msgs/msg/Float64MultiArray]` with one value per joint, in joint order.
+
+**Combinations:**
+- Can run alongside `force_mode_controller`.
+- Mutually exclusive with all other motion controllers.
+
+To activate:
+
+```bash
+ros2 control switch_controllers \
+  --deactivate scaled_joint_trajectory_controller \
+  --activate forward_position_controller
+```
+
+<Accordion title="Configuration in ur_controllers.yaml">
+
+```yaml
+forward_position_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    interface_name: position
+```
+
+</Accordion>
+
+### `forward_velocity_controller`
+
+**Type:** `forward_command_controller/ForwardCommandController` with `interface_name: velocity`
+
+Streams target joint velocities directly to the robot via the URScript `speedj(...)` function. The controller subscribes to `~/commands [std_msgs/msg/Float64MultiArray]` with one velocity value per joint.
+
+**Combinations:**
+- Can run alongside `force_mode_controller`.
+- Mutually exclusive with all other motion controllers.
+
+To activate:
+
+```bash
+ros2 control switch_controllers \
+  --deactivate scaled_joint_trajectory_controller \
+  --activate forward_velocity_controller
+```
+
+<Accordion title="Configuration in ur_controllers.yaml">
+
+```yaml
+forward_velocity_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    interface_name: velocity
+```
+
+</Accordion>
+
+## Controller compatibility
+
+The table below summarizes which position and velocity controllers can be active simultaneously.
+
+| Controller | Compatible with | Mutually exclusive with |
+|---|---|---|
+| `joint_trajectory_controller` | `force_mode_controller`, `tool_contact_controller` | All other motion controllers |
+| `scaled_joint_trajectory_controller` | `force_mode_controller`, `tool_contact_controller` | All other motion controllers |
+| `passthrough_trajectory_controller` | `force_mode_controller`, `tool_contact_controller` | All other motion controllers |
+| `forward_position_controller` | `force_mode_controller` | All other motion controllers |
+| `forward_velocity_controller` | `force_mode_controller` | All other motion controllers |
+| `motion_primitive_forward_controller` | `force_mode_controller`, `tool_contact_controller` | All other motion controllers |

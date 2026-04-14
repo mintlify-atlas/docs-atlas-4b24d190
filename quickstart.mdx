@@ -1,80 +1,185 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quickstart: Connect a UR Robot and Send Trajectories"
+description: "End-to-end guide to connect a UR robot, start the ROS2 driver, verify the connection, and send a test trajectory using the scaled joint trajectory controller."
 ---
 
-## Get started in three steps
+This guide takes you from a freshly installed driver to a moving robot. Complete [Installation](/installation) and [Robot Setup](/robot-setup) before proceeding.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+- ROS2 installed and sourced (`source /opt/ros/${ROS_DISTRO}/setup.bash`)
+- `ur_robot_driver` installed (binary or from source)
+- Robot powered on and network-reachable, or mock hardware for offline testing
+- External Control URCap installed and configured (real robot only)
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+## Step 1: Install the driver
 
-### Step 2: Deploy your changes
+If you have not already installed the driver:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+```bash
+sudo apt-get install ros-${ROS_DISTRO}-ur
+```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+See [Installation](/installation) for source build instructions and ROS2 distro compatibility.
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+## Step 2: Launch the driver
 
-### Step 3: Go live
+<Tabs>
+  <Tab title="Real robot">
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+Replace `ur5e` with your robot model and `192.168.56.101` with your robot's IP address.
+
+Allowed `ur_type` values: `ur3`, `ur3e`, `ur5`, `ur5e`, `ur7e`, `ur10`, `ur10e`, `ur12e`, `ur16e`, `ur8long`, `ur15`, `ur18`, `ur20`, `ur30`.
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py \
+  ur_type:=ur5e \
+  robot_ip:=192.168.56.101
+```
+
+To use the calibration file extracted from your robot, add `kinematics_params_file`:
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py \
+  ur_type:=ur5e \
+  robot_ip:=192.168.56.101 \
+  kinematics_params_file:="${HOME}/my_robot_calibration.yaml"
+```
+
+  </Tab>
+  <Tab title="Mock hardware (offline)">
+
+Use mock hardware to test launch files, descriptions, and controller pipelines without a physical robot or simulator.
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py \
+  ur_type:=ur5e \
+  robot_ip:=yyy.yyy.yyy.yyy \
+  use_mock_hardware:=true
+```
+
+<Note>
+  Some features do not work with mock hardware: the TCP pose broadcaster, passthrough trajectory controller, force mode controller, and GPIO controller state verification are all unavailable or non-functional in this mode.
+</Note>
+
+  </Tab>
+  <Tab title="URSim simulator">
+
+Start the URSim Docker container (requires Docker and `ur_client_library` installed):
+
+```bash
+ros2 run ur_client_library start_ursim.sh -m ur5e
+```
+
+Then launch the driver pointed at the simulator's default IP:
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py \
+  ur_type:=ur5e \
+  robot_ip:=192.168.56.101 \
+  launch_rviz:=true
+```
+
+  </Tab>
+</Tabs>
+
+## Step 3: Start the External Control program on the robot
+
+Unless you launched with `headless_mode:=true`, you must now start the External Control URCap program on the teach pendant to hand control to the ROS driver.
+
+<Tabs>
+  <Tab title="Local control mode">
+    Load the program on the teach pendant and press **Play**.
+  </Tab>
+  <Tab title="Remote control mode">
+    Use the dashboard service calls to load and start the program:
+
+    ```bash
+    ros2 service call /dashboard_client/load_program ur_dashboard_msgs/srv/Load \
+      "filename: my_robot_program.urp"
+    ros2 service call /dashboard_client/play std_srvs/srv/Trigger {}
+    ```
+  </Tab>
+  <Tab title="Headless mode">
+    No action needed — with `headless_mode:=true` the driver sends the script directly to the robot and starts automatically.
+  </Tab>
+</Tabs>
+
+## Step 4: Verify the robot is connected
+
+In a new terminal, list the loaded controllers:
+
+```bash
+# Install ros2controlcli if not already present
+sudo apt-get install ros-${ROS_DISTRO}-ros2controlcli
+
+ros2 control list_controllers
+```
+
+You should see `scaled_joint_trajectory_controller` and several other controllers in the `active` state. If controllers are in `inactive`, the driver has not yet received a connection from the robot — check that the External Control program is running on the teach pendant.
+
+## Step 5: Send a test trajectory
+
+The driver ships with a test launch file that sends a predefined trajectory to the `scaled_joint_trajectory_controller`. Run it in a new terminal:
+
+```bash
+ros2 launch ur_robot_driver test_scaled_joint_trajectory_controller.launch.py
+```
+
+The robot will move to the following joint configuration (values in radians) after a few seconds:
+
+```yaml
+shoulder_pan_joint: 0
+shoulder_lift_joint: -1.57
+elbow_joint: 0
+wrist_1_joint: -1.57
+wrist_2_joint: 0
+wrist_3_joint: 0
+```
+
+<Warning>
+  The test node checks that the robot is near the predefined configuration before executing to avoid large unexpected motions. If the robot is far from this pose, move it close first using the teach pendant. Never run motion commands on a real robot without verifying the robot's surroundings are clear.
+</Warning>
+
+You can also run the included example move script, which sends two sequential trajectories:
+
+```bash
+ros2 run ur_robot_driver example_move.py
+```
+
+## Key launch arguments
+
+The following arguments are available for `ur_control.launch.py`:
+
+| Argument | Default | Description |
+|---|---|---|
+| `ur_type` | — | Robot model (required) |
+| `robot_ip` | — | Robot IP address (required) |
+| `kinematics_params_file` | `None` | Path to calibration YAML from `ur_calibration` |
+| `use_mock_hardware` | `false` | Use ros2_control mock hardware emulator |
+| `headless_mode` | `false` | Send script directly without teach pendant interaction |
+| `launch_rviz` | `true` | Start RViz alongside the driver |
+| `initial_joint_controller` | `scaled_joint_trajectory_controller` | Active controller at startup |
+
+To see all available arguments:
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py --show-args
+```
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Operation modes" icon="toggle-on" href="/usage/operation-modes">
+    Understand teach pendant mode, headless mode, and remote control mode
+  </Card>
+  <Card title="MoveIt2 integration" icon="route" href="/usage/moveit">
+    Plan and execute Cartesian trajectories with MoveIt2
+  </Card>
+  <Card title="Controllers overview" icon="sliders" href="/controllers/overview">
+    Explore all available controllers: scaled JTC, passthrough, force mode, and more
+  </Card>
+  <Card title="Simulation" icon="display" href="/usage/simulation">
+    Use URSim or Gazebo for development and testing without a physical robot
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

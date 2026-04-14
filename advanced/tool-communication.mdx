@@ -1,0 +1,149 @@
+---
+title: "RS485 Tool Communication Forwarding on UR e-Series"
+description: "Forward the RS485 serial interface at the UR e-Series tool flange to a virtual device on your ROS PC using the tool communication URCap and driver parameters."
+---
+
+From the e-Series onwards, Universal Robots robots expose an RS485 serial interface at the tool flange. This lets you attach RS485-based devices — such as grippers, force/torque sensors, or cameras — directly to the TCP without running a separate cable along the robot arm. The `ur_robot_driver` can forward this interface to a virtual serial device on the ROS PC so that any standard ROS driver for the attached device can open it like a local serial port.
+
+<Note>
+  There is a known conflict between the RS485 tool communication URCap and the **Robotiq Grippers** URCap running simultaneously. If you plan to use the Robotiq Grippers URCap, do not install the RS485 URCap. See [the upstream issue](https://github.com/UniversalRobots/Universal_Robots_ToolComm_Forwarder_URCap/issues/9) for the current status.
+</Note>
+
+## Hardware requirements
+
+- A UR e-Series robot (UR3e, UR5e, UR10e, UR16e, UR20, UR30) or a robot running PolyScope X.
+- An RS485-based device wired to the tool flange connector.
+- A direct network connection between the ROS PC and the robot controller.
+
+## Installing the URCap on the robot
+
+<Tabs>
+  <Tab title="PolyScope 5 (e-Series)">
+    Install the **rs485-1.0.urcap** file found in the `resources` folder of this repository. Installing a URCap follows the same procedure as installing the External Control URCap — navigate to **Settings → System → URCaps** on the teach pendant, select the `.urcap` file, and restart PolyScope when prompted.
+
+    After installation the robot will expose its tool communication device over the network whenever an active program is running.
+  </Tab>
+  <Tab title="PolyScope X">
+    Download the latest **tool-comm-forwarder URCapX** from its [release page](https://github.com/UniversalRobots/Universal_Robots_ToolComm_Forwarder_URCapX/releases).
+
+    After installing the URCapX, open the URCap's application screen on the teach pendant and enable **tool forwarding**.
+  </Tab>
+</Tabs>
+
+## Enabling tool communication in the driver
+
+Pass `use_tool_communication:=true` to the control launch file along with any required serial parameters:
+
+```bash
+ros2 launch ur_robot_driver ur_control.launch.py \
+  ur_type:=ur5e \
+  robot_ip:=yyy.yyy.yyy.yyy \
+  use_tool_communication:=true \
+  use_mock_hardware:=false \
+  launch_rviz:=false
+```
+
+<Warning>
+  Your user account must have permission to create file handles in the directory specified by `tool_device_name`. The default path `/tmp/ttyUR` works for most setups because ordinary users can write to `/tmp`. Do not use `/dev/` unless you have configured the appropriate `udev` rules.
+</Warning>
+
+## Tool communication parameters
+
+These parameters are passed through the `ur.ros2_control.xacro` definition and can be set as launch arguments:
+
+<AccordionGroup>
+  <Accordion title="tool_voltage">
+    **Type:** string | **Required when** `use_tool_communication` is `true`
+
+    Tool voltage supplied at the flange. Set this according to your device's power requirements. Valid values depend on the robot model — consult the Universal Robots user manual.
+
+    This setting can also be configured on the teach pendant. Save the installation after making changes so the setting persists across reboots.
+  </Accordion>
+
+  <Accordion title="tool_parity">
+    **Type:** integer | **Required when** `use_tool_communication` is `true`
+
+    Parity used for the serial connection.
+
+    | Value | Meaning |
+    |---|---|
+    | `0` | None |
+    | `1` | Odd |
+    | `2` | Even |
+
+    This setting can also be configured on the teach pendant.
+  </Accordion>
+
+  <Accordion title="tool_baud_rate">
+    **Type:** integer | **Required when** `use_tool_communication` is `true`
+
+    Baud rate for the RS485 connection. Applied as soon as the URScript program starts on the robot. See the UR documentation for the list of valid baud rates.
+
+    This setting can also be configured on the teach pendant.
+  </Accordion>
+
+  <Accordion title="tool_stop_bits">
+    **Type:** integer | **Required when** `use_tool_communication` is `true`
+
+    Number of stop bits. Valid values: `1` or `2`.
+
+    This setting can also be configured on the teach pendant.
+  </Accordion>
+
+  <Accordion title="tool_rx_idle_chars">
+    **Type:** float | **Required when** `use_tool_communication` is `true`
+
+    Number of idle characters for the RX unit. Valid range: 1.0 – 40.0.
+
+    This setting can also be configured on the teach pendant.
+  </Accordion>
+
+  <Accordion title="tool_tx_idle_chars">
+    **Type:** float | **Required when** `use_tool_communication` is `true`
+
+    Number of idle characters for the TX unit. Valid range: 0.0 – 40.0.
+
+    This setting can also be configured on the teach pendant.
+  </Accordion>
+
+  <Accordion title="tool_device_name">
+    **Type:** string | **Default:** `/tmp/ttyUR`
+
+    Path of the virtual serial device file created on the ROS PC. You can use any path where your user has write permissions. Most ROS drivers for RS485 devices accept a `device` parameter pointing to this path.
+  </Accordion>
+
+  <Accordion title="tool_tcp_port">
+    **Type:** integer
+
+    Network port over which the robot exposes the tool communication stream.
+  </Accordion>
+</AccordionGroup>
+
+## Connecting a device driver to the virtual port
+
+Once the driver is running with tool communication enabled, the virtual serial device appears at the path specified by `tool_device_name` (default: `/tmp/ttyUR`). Point your device's ROS driver at that path. For example, for a hypothetical `rs485_node`:
+
+```bash
+ros2 run imaginary_drivers rs485_node --ros-args -p device:=/tmp/ttyUR
+```
+
+## Using the convenience script
+
+The driver ships a `socat`-based convenience script that sets up the forwarding without starting the full driver stack:
+
+```bash
+ros2 run ur_robot_driver tool_communication.py \
+  --ros-args \
+  -p robot_ip:=192.168.56.101 \
+  -p device_name:=/tmp/ttyUR
+```
+
+This is useful when you want to test the serial connection independently of the ros2_control pipeline.
+
+## Configuring parameters on the teach pendant
+
+All serial parameters (`tool_voltage`, `tool_parity`, `tool_baud_rate`, `tool_stop_bits`, `tool_rx_idle_chars`, `tool_tx_idle_chars`) can be set directly on the teach pendant instead of passing them as launch arguments. After making changes on the pendant, navigate to **Installation → Save** to persist the settings across power cycles.
+
+<Tip>
+  When parameters are set both on the teach pendant and as launch arguments, the values sent by the URScript program at startup (driven by the launch arguments) take precedence.
+</Tip>

@@ -1,0 +1,170 @@
+---
+title: "UR ROS2 Controllers Overview: Selection and Switching"
+description: "Learn how ros2_control manages UR robot controllers, which ones start active by default, and how to list, activate, and switch controllers using the CLI."
+---
+
+The Universal Robots ROS 2 driver uses [ros2_control](https://control.ros.org) to manage all robot controllers through a central `controller_manager` node. At startup, a set of controllers is spawned in the active state (ready to use) and another set is spawned in the inactive state (loaded but not yet usable). Motion controllers that write to joint command interfaces are mutually exclusive — only one can hold a given interface at a time.
+
+## Controller states
+
+Controllers in ros2_control exist in one of two runtime states:
+
+- **Active**: The controller is running and can send commands or publish data.
+- **Inactive**: The controller is loaded into memory but not running. It must be activated before use.
+
+Broadcasters (read-only controllers) can run alongside any motion controller. Motion controllers that share command interfaces cannot be active at the same time.
+
+## Default active and inactive controllers
+
+On startup, the driver activates a fixed set of status and broadcaster controllers, and activates `scaled_joint_trajectory_controller` as the default motion controller (unless `activate_joint_controller:=false` is passed to the launch file).
+
+<Tabs>
+  <Tab title="Active by default">
+    | Controller | Type | Purpose |
+    |---|---|---|
+    | `joint_state_broadcaster` | Broadcaster | Publishes joint positions, velocities, and currents |
+    | `io_and_status_controller` | UR-specific | I/O access, robot status, FT sensor zeroing |
+    | `speed_scaling_state_broadcaster` | Broadcaster | Publishes current speed scaling factor |
+    | `force_torque_sensor_broadcaster` | Broadcaster | Publishes TCP wrench |
+    | `tcp_pose_broadcaster` | Broadcaster | Publishes TCP pose and TF transform |
+    | `ur_configuration_controller` | UR-specific | Robot software version query |
+    | `friction_model_controller` | UR-specific | Per-joint friction compensation for torque control |
+    | `scaled_joint_trajectory_controller` | Motion | Default trajectory controller with speed scaling |
+  </Tab>
+  <Tab title="Inactive by default">
+    | Controller | Type | Purpose |
+    |---|---|---|
+    | `joint_trajectory_controller` | Motion | Standard JTC with speed scaling |
+    | `forward_position_controller` | Motion | Real-time joint position streaming |
+    | `forward_velocity_controller` | Motion | Real-time joint velocity streaming |
+    | `forward_effort_controller` | Motion | Direct joint torque streaming |
+    | `passthrough_trajectory_controller` | Motion | Forwards full trajectories to robot controller |
+    | `motion_primitive_forward_controller` | Motion | Forwards motion primitives to robot controller |
+    | `force_mode_controller` | UR-specific | Cartesian force/torque control |
+    | `freedrive_mode_controller` | UR-specific | Manual robot guidance |
+    | `tool_contact_controller` | UR-specific | Stops motion on tool contact |
+  </Tab>
+</Tabs>
+
+## Available controllers by category
+
+<CardGroup cols={2}>
+  <Card title="Position and velocity" icon="sliders" href="/controllers/position-velocity">
+    Trajectory-based control, direct position and velocity streaming, motion primitives, and passthrough trajectory execution.
+  </Card>
+  <Card title="Force and torque" icon="weight-hanging" href="/controllers/force-torque">
+    Joint torque control, Cartesian force mode, freedrive, and tool contact detection.
+  </Card>
+  <Card title="Utility controllers" icon="wrench" href="/controllers/utility-controllers">
+    I/O access, speed scaling, TCP pose broadcasting, robot state, and configuration.
+  </Card>
+</CardGroup>
+
+## Listing controllers
+
+Install the CLI package if it is not already present:
+
+```bash
+sudo apt install ros-${ROS_DISTRO}-ros2controlcli
+```
+
+To list all controllers and their current state:
+
+```bash
+ros2 control list_controllers
+```
+
+Example output:
+
+```text
+joint_state_broadcaster[joint_state_broadcaster/JointStateBroadcaster] active
+io_and_status_controller[ur_controllers/GPIOController] active
+speed_scaling_state_broadcaster[ur_controllers/SpeedScalingStateBroadcaster] active
+scaled_joint_trajectory_controller[ur_controllers/ScaledJointTrajectoryController] active
+forward_position_controller[forward_command_controller/ForwardCommandController] inactive
+...
+```
+
+## Switching controllers
+
+Use the `ros2 control switch_controllers` command to deactivate one controller and activate another in a single atomic operation. Because motion controllers claim exclusive command interfaces, you must deactivate the current motion controller before activating a new one.
+
+### Switch from `scaled_joint_trajectory_controller` to `forward_position_controller`
+
+```bash
+ros2 control switch_controllers \
+  --deactivate scaled_joint_trajectory_controller \
+  --activate forward_position_controller
+```
+
+Expected output:
+
+```text
+[INFO] [_ros2cli]: waiting for service /controller_manager/switch_controller to become available...
+Successfully switched controllers
+```
+
+### Switch back to `scaled_joint_trajectory_controller`
+
+```bash
+ros2 control switch_controllers \
+  --deactivate forward_position_controller \
+  --activate scaled_joint_trajectory_controller
+```
+
+<Note>
+You can also use the `rqt_controller_manager` GUI to switch controllers interactively, or call the `/controller_manager/switch_controller` service directly.
+</Note>
+
+## Controller configuration
+
+All controllers are declared and configured in `ur_robot_driver/config/ur_controllers.yaml`. This file is loaded by the controller spawner at startup and contains the type, joints, interfaces, and parameters for every controller.
+
+```yaml
+controller_manager:
+  ros__parameters:
+    scaled_joint_trajectory_controller:
+      type: ur_controllers/ScaledJointTrajectoryController
+
+    forward_position_controller:
+      type: forward_command_controller/ForwardCommandController
+
+    force_mode_controller:
+      type: ur_controllers/ForceModeController
+
+    # ... all other controllers
+
+scaled_joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    speed_scaling_interface_name: speed_scaling/speed_scaling_factor
+```
+
+<Tip>
+To customize controller parameters, copy `ur_controllers.yaml` and pass it to the launch file via the `controllers_file` argument rather than editing the package file directly.
+</Tip>
+
+## Choosing the right motion controller
+
+| Use case | Recommended controller |
+|---|---|
+| MoveIt or trajectory planner, ROS PC with real-time kernel | `scaled_joint_trajectory_controller` |
+| MoveIt or trajectory planner, no real-time kernel | `passthrough_trajectory_controller` |
+| Real-time servoing, teleoperation (position) | `forward_position_controller` |
+| Real-time servoing, teleoperation (velocity) | `forward_velocity_controller` |
+| Direct joint torque control | `forward_effort_controller` |
+| High-level moveJ / moveL / moveC sequences | `motion_primitive_forward_controller` |
+| Cartesian force-constrained motion | `force_mode_controller` + a position controller |
+| Manual robot guidance | `freedrive_mode_controller` |
+| Probing / surface detection | `tool_contact_controller` + a trajectory controller |

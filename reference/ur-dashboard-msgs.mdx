@@ -1,0 +1,529 @@
+---
+title: "ur_dashboard_msgs Package: Message and Service Types"
+description: "Field-level reference for all types in ur_dashboard_msgs — RobotMode, SafetyMode, Load, SetMode action, and 28 service types used by the UR dashboard client."
+---
+
+The `ur_dashboard_msgs` package defines the ROS2 message and service types used to communicate with the UR Dashboard Server via the dashboard client node. All types are generated from IDL definitions at build time and are available under the `ur_dashboard_msgs` namespace. The package also includes one action type used by the robot state helper.
+
+## Message types
+
+<AccordionGroup>
+  <Accordion title="RobotMode">
+    Represents the current robot mode. The `mode` field holds one of the following integer constants:
+
+    | Constant | Value | Meaning |
+    |---|---|---|
+    | `NO_CONTROLLER` | `-1` | No controller present |
+    | `DISCONNECTED` | `0` | Driver is disconnected from the robot |
+    | `CONFIRM_SAFETY` | `1` | Waiting for safety confirmation |
+    | `BOOTING` | `2` | Robot is booting |
+    | `POWER_OFF` | `3` | Motors are powered off |
+    | `POWER_ON` | `4` | Motors are powered on but brakes are engaged |
+    | `IDLE` | `5` | Brakes are released; robot is ready |
+    | `BACKDRIVE` | `6` | Backdrive mode active |
+    | `RUNNING` | `7` | Robot is running a program |
+    | `UPDATING_FIRMWARE` | `8` | Firmware update in progress |
+
+    ```
+    int8 mode
+    ```
+  </Accordion>
+
+  <Accordion title="SafetyMode">
+    Represents the current safety mode of the robot. The `mode` field holds one of the following unsigned integer constants:
+
+    | Constant | Value |
+    |---|---|
+    | `NORMAL` | `1` |
+    | `REDUCED` | `2` |
+    | `PROTECTIVE_STOP` | `3` |
+    | `RECOVERY` | `4` |
+    | `SAFEGUARD_STOP` | `5` |
+    | `SYSTEM_EMERGENCY_STOP` | `6` |
+    | `ROBOT_EMERGENCY_STOP` | `7` |
+    | `VIOLATION` | `8` |
+    | `FAULT` | `9` |
+    | `VALIDATE_JOINT_ID` | `10` |
+    | `UNDEFINED_SAFETY_MODE` | `11` |
+    | `AUTOMATIC_MODE_SAFEGUARD_STOP` | `12` |
+    | `SYSTEM_THREE_POSITION_ENABLING_STOP` | `13` |
+
+    ```
+    uint8 mode
+    ```
+  </Accordion>
+
+  <Accordion title="SafetyStatus">
+    A more detailed safety status type than `SafetyMode`, available on PolyScope 5. Includes additional states for ProfiSAFE and IMMI integrations. The `status` field holds one of the following signed integer constants:
+
+    | Constant | Value |
+    |---|---|
+    | `NORMAL` | `1` |
+    | `REDUCED` | `2` |
+    | `PROTECTIVE_STOP` | `3` |
+    | `RECOVERY` | `4` |
+    | `SAFEGUARD_STOP` | `5` |
+    | `SYSTEM_EMERGENCY_STOP` | `6` |
+    | `ROBOT_EMERGENCY_STOP` | `7` |
+    | `VIOLATION` | `8` |
+    | `FAULT` | `9` |
+    | `VALIDATE_JOINT_ID` | `10` |
+    | `UNDEFINED_SAFETY_MODE` | `11` |
+    | `AUTOMATIC_MODE_SAFEGUARD_STOP` | `12` |
+    | `SYSTEM_THREE_POSITION_ENABLING_STOP` | `13` |
+    | `TP_THREE_POSITION_ENABLING_STOP` | `14` |
+    | `IMMI_EMERGENCY_STOP` | `15` |
+    | `IMMI_SAFEGUARD_STOP` | `16` |
+    | `PROFISAFE_WAITING_FOR_PARAMETERS` | `17` |
+    | `PROFISAFE_AUTOMATIC_MODE_SAFEGUARD_STOP` | `18` |
+    | `PROFISAFE_SAFEGUARD_STOP` | `19` |
+    | `PROFISAFE_EMERGENCY_STOP` | `20` |
+    | `SAFETY_API_SAFEGUARD_STOP` | `22` |
+
+    ```
+    int8 status
+    ```
+  </Accordion>
+
+  <Accordion title="OperationalMode">
+    Represents the operational mode of the robot. Uses string constants.
+
+    | Constant | Value |
+    |---|---|
+    | `MANUAL` | `"MANUAL"` |
+    | `AUTOMATIC` | `"AUTOMATIC"` |
+
+    ```
+    string mode
+    ```
+  </Accordion>
+
+  <Accordion title="ProgramState">
+    Represents the execution state of the currently loaded program. Uses string constants.
+
+    | Constant | Value |
+    |---|---|
+    | `STOPPED` | `"STOPPED"` |
+    | `PLAYING` | `"PLAYING"` |
+    | `PAUSED` | `"PAUSED"` |
+
+    ```
+    string state
+    ```
+  </Accordion>
+
+  <Accordion title="ProgramInformation">
+    Holds metadata about a program stored on a PolyScope X robot. Returned in arrays by the `GetPrograms` service.
+
+    | Constant | Value |
+    |---|---|
+    | `PROGRAM_STATE_DRAFT` | `"DRAFT"` |
+    | `PROGRAM_STATE_FINAL` | `"FINAL"` |
+
+    ```
+    string name
+    string description
+    uint64 created_date
+    uint64 last_saved_date
+    uint64 last_modified_date
+    string program_state
+    ```
+  </Accordion>
+
+  <Accordion title="UserRole">
+    Represents the current user role on the robot (CB3 only). Uses string constants.
+
+    | Constant | Value |
+    |---|---|
+    | `PROGRAMMER` | `"PROGRAMMER"` |
+    | `OPERATOR` | `"OPERATOR"` |
+    | `NONE` | `"NONE"` |
+    | `LOCKED` | `"LOCKED"` |
+    | `RESTRICTED` | `"RESTRICTED"` |
+
+    ```
+    string role
+    ```
+  </Accordion>
+
+  <Accordion title="VersionInformation">
+    Holds a structured software version number. Returned by the `GetPolyScopeVersion` service.
+
+    ```
+    uint32 major
+    uint32 minor
+    uint32 bugfix
+    uint32 build
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Service types
+
+<AccordionGroup>
+  <Accordion title="AddToLog">
+    Add a message to the robot's internal log.
+
+    **Request:**
+    ```
+    string message
+    ```
+
+    **Response:**
+    ```
+    string answer
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="Load">
+    Load a program or installation file by filename.
+
+    **Request:**
+    ```
+    string filename
+    ```
+
+    **Response:**
+    ```
+    string answer
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="Popup">
+    Show a popup message on the teach pendant.
+
+    **Request:**
+    ```
+    string message
+    ```
+
+    **Response:**
+    ```
+    string answer
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="RawRequest">
+    Send an arbitrary command string to the dashboard server.
+
+    **Request:**
+    ```
+    string query
+    ```
+
+    **Response:**
+    ```
+    string answer
+    ```
+  </Accordion>
+
+  <Accordion title="GetLoadedProgram">
+    Get the name of the currently loaded program.
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    string answer
+    string program_name
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="GetRobotMode">
+    Get the current robot mode.
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    RobotMode robot_mode
+    string answer
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="GetSafetyMode">
+    Get the current safety mode.
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    SafetyMode safety_mode
+    string answer
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="GetSafetyStatus">
+    Get the detailed safety status (PolyScope 5 only).
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    string answer
+    bool success
+    SafetyStatus safety_status
+    ```
+  </Accordion>
+
+  <Accordion title="GetProgramState">
+    Get the current program execution state.
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    ProgramState state
+    string program_name
+    string answer
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="GetPrograms">
+    Get a list of all programs stored on the robot (PolyScope X >= 10.12.0).
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    ProgramInformation[] programs
+    string answer
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="IsProgramRunning">
+    Query whether a program is currently running.
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    string answer
+    bool program_running
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="IsProgramSaved">
+    Query whether the current program has been saved.
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    string answer
+    string program_name
+    bool program_saved
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="IsInRemoteControl">
+    Query whether the robot is in remote control mode.
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    string answer
+    bool remote_control
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="GetOperationalMode">
+    Get the current operational mode (PolyScope 5 and PolyScope X >= 10.12.0).
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    bool success
+    string answer
+    OperationalMode operational_mode
+    ```
+  </Accordion>
+
+  <Accordion title="SetOperationalMode">
+    Set the operational mode (PolyScope 5 only).
+
+    **Request:**
+    ```
+    OperationalMode operational_mode
+    ```
+
+    **Response:**
+    ```
+    string answer
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="GetPolyScopeVersion">
+    Get the PolyScope software version (CB3 and PolyScope 5).
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    string answer
+    bool success
+    VersionInformation version
+    ```
+  </Accordion>
+
+  <Accordion title="GetSerialNumber">
+    Get the robot's serial number (CB3 and PolyScope 5).
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    uint64 serial_number
+    string answer
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="GetRobotModel">
+    Get the robot model string (CB3 and PolyScope 5).
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    bool success
+    string answer
+    string robot_model
+    ```
+  </Accordion>
+
+  <Accordion title="GetUserRole">
+    Get the current user role (CB3 only).
+
+    **Request:** _(empty)_
+
+    **Response:**
+    ```
+    UserRole user_role
+    string answer
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="SetUserRole">
+    Set the user role (CB3 only).
+
+    **Request:**
+    ```
+    UserRole user_role
+    ```
+
+    **Response:**
+    ```
+    bool success
+    string answer
+    ```
+  </Accordion>
+
+  <Accordion title="DownloadProgram">
+    Download a program from the robot as a local `.urpx` file (PolyScope X >= 10.12.0).
+
+    **Request:**
+    ```
+    string program_name
+    string target_path
+    ```
+
+    **Response:**
+    ```
+    string answer
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="UploadProgram">
+    Upload a local program file to the robot (PolyScope X >= 10.12.0).
+
+    **Request:**
+    ```
+    string file_path
+    ```
+
+    **Response:**
+    ```
+    string answer
+    string program_name
+    bool success
+    ```
+  </Accordion>
+
+  <Accordion title="GenerateFlightReport">
+    Generate a flight report (CB3 and PolyScope 5). The `report_type` field defaults to `SYSTEM`. Wait at least 30 seconds between triggering `software` or `controller` reports.
+
+    **Request:**
+    ```
+    # Constants: controller, software, system
+    string report_type  # default: SYSTEM
+    ```
+
+    **Response:**
+    ```
+    bool success
+    string answer
+    string report_id
+    ```
+  </Accordion>
+
+  <Accordion title="GenerateSupportFile">
+    Generate a support file on the robot (CB3 and PolyScope 5). The `dir_path` is relative to the robot's programs folder and defaults to `.` (the programs folder root). The target directory must exist before calling.
+
+    **Request:**
+    ```
+    string dir_path  # default: .
+    ```
+
+    **Response:**
+    ```
+    bool success
+    string answer
+    string generated_file_name
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Action types
+
+<AccordionGroup>
+  <Accordion title="SetMode">
+    Used by the `robot_state_helper` node to set the robot to a desired mode, optionally stopping and restarting the currently loaded program.
+
+    **Goal:**
+    ```
+    # Target modes: 3 = POWER_OFF, 5 = IDLE, 7 = RUNNING
+    int8 target_robot_mode
+    bool stop_program    # Stop program before changing mode
+    bool play_program    # Play program after target mode is reached (RUNNING only)
+    ```
+
+    **Result:**
+    ```
+    bool success
+    string message
+    ```
+
+    **Feedback:**
+    ```
+    int8 current_robot_mode
+    int8 current_safety_mode
+    ```
+  </Accordion>
+</AccordionGroup>
